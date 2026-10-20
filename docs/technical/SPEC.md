@@ -128,7 +128,7 @@ src/
     invitation-create/  invitation-revoke/  member-change-role/  member-deactivate/
     lead-create/  lead-edit/  lead-assign/  lead-take/  lead-change-status/  lead-record-first-contact/
     lead-add-comment/  lead-delete/  lead-search/  lead-filter/
-    lead-import-csv/
+    lead-import-csv/  lead-export-csv/
     ai-generate-analysis/  ai-generate-reply-draft/  ai-apply-fields/  ai-weekly-summary/
     sla-policy-edit/  api-key-create/  api-key-revoke/  org-settings-edit/  org-toggle-ai/
     notification-mark-read/  locale-switch/  profile-edit/  password-change/
@@ -555,7 +555,7 @@ sequenceDiagram
 | actorType | AuditActorType | NOT NULL |
 | actorUserId | uuid | FK → User, NULL |
 | actorApiKeyId | uuid | FK → ApiKey, NULL |
-| action | varchar(64) | `AUTH_LOGIN_SUCCEEDED`, `AUTH_LOGIN_FAILED`, `AUTH_LOGOUT`, `ORG_REGISTERED`, `ORG_SETTINGS_UPDATED`, `ORG_AI_PROCESSING_TOGGLED`, `INVITATION_CREATED`, `INVITATION_REVOKED`, `INVITATION_ACCEPTED`, `MEMBER_ROLE_CHANGED`, `MEMBER_DEACTIVATED`, `PASSWORD_CHANGED`, `SLA_POLICY_UPDATED`, `API_KEY_CREATED`, `API_KEY_REVOKED`, `CSV_IMPORTED`, `LEAD_DELETED`, `LEAD_REASSIGNED` |
+| action | varchar(64) | `AUTH_LOGIN_SUCCEEDED`, `AUTH_LOGIN_FAILED`, `AUTH_LOGOUT`, `ORG_REGISTERED`, `ORG_SETTINGS_UPDATED`, `ORG_AI_PROCESSING_TOGGLED`, `INVITATION_CREATED`, `INVITATION_REVOKED`, `INVITATION_ACCEPTED`, `MEMBER_ROLE_CHANGED`, `MEMBER_DEACTIVATED`, `PASSWORD_CHANGED`, `SLA_POLICY_UPDATED`, `API_KEY_CREATED`, `API_KEY_REVOKED`, `CSV_IMPORTED`, `LEADS_EXPORTED`, `LEAD_DELETED`, `LEAD_REASSIGNED` |
 | entityType, entityId | varchar(32), uuid | NULL |
 | subjectHash | char(64) | NULL; SHA-256 нормализованного email для подсчёта неудачных входов |
 | metadata | jsonb | Без ПДн клиентов: `{from,to}`, `{imported,skipped}`, `{role}` |
@@ -592,7 +592,7 @@ sequenceDiagram
 | Rate limit входа | Перед проверкой пароля: `count(AuditLog WHERE action=AUTH_LOGIN_FAILED AND subjectHash=… AND createdAt > now-15m) ≥ 5` → 429 (SEC-004). По IP — `@nestjs/throttler` 30/мин на `/auth/*` (in-memory; при нескольких инстансах → Redis-хранилище, §23) |
 | Равное время ответа | При неизвестном email выполняется argon2-verify с фиктивным хэшем |
 | Аннулирование | Выход — текущая; смена пароля — все, кроме текущей; деактивация — все сессии пользователя |
-| `GET /auth/me` | `{user:{id,email,fullName,locale}, organization:{id,name,isDemo,aiExternalProcessingEnabled,timezone}, role, permissions[], serverTime}` |
+| `GET /auth/me` | `{user:{id,email,fullName,locale}, organization:{id,name,isDemo,aiExternalProcessingEnabled,timezone}, role, permissions[], features: Record<FeatureFlag, boolean>, serverTime}` (`features` — флаги cut-line, ADR-020) |
 
 ## 13. API-контракты
 
@@ -648,6 +648,7 @@ sequenceDiagram
 | GET `/leads/overdue` | «Без реакции» | O H M (вид.) | FR-034 |
 | GET `/leads/import/template` | CSV-шаблон | O H | FR-060 |
 | POST `/leads/import/preview` · POST `/leads/import` | Предпросмотр · импорт | O H | FR-061 |
+| GET `/leads/export.csv` | Экспорт CSV по фильтрам списка | O H M (вид.) | FR-064 |
 | GET `/sla-policy` · PUT `/sla-policy` | Политика | O H | FR-030, FR-031 |
 | GET `/notifications` · GET `/notifications/unread-count` | Список · счётчик | O H M (свои) | FR-041 |
 | POST `/notifications/{id}/read` · POST `/notifications/read-all` | Прочтение | O H M (свои) | FR-041 |
@@ -722,6 +723,13 @@ sequenceDiagram
 - Строка `CsvLeadRow`: поля шаблона FR-060; `source` — код enum или синонимы (`instagram`, `insta`, `телеграм`…); `district` — код или название RU/UZ из справочника; `assigneeEmail` — активный участник; `receivedAt`, `firstResponseAt` — `YYYY-MM-DD HH:mm` (Asia/Tashkent) или ISO 8601; `receivedAt` ≤ now и ≥ now − 365 дней; `firstResponseAt` ≥ `receivedAt`.
 - Preview 200: `{ totalRows, validRows, invalidRows, duplicateRows, errors: [{ row, column, code }] (≤500), sample: CsvLeadRowNormalized[20] }`.
 - Import 200: `{ imported, skipped, errors[] }`. SLA: `firstResponseDueAt` по текущей политике от `receivedAt`; если `firstResponseAt` есть → MET/BREACHED; если нет и дедлайн прошёл → `BREACHED` (без уведомлений, `slaBreachedAt = dueAt`); иначе `PENDING`. Статус — `CONTACTED`, если есть `firstResponseAt`, иначе `NEW`. Вставка пачками по 500 в одной транзакции.
+
+#### GET `/leads/export.csv` (FR-064, ADR-019)
+- Query: те же параметры, что `GET /leads` (`LeadListQuery`), кроме `page`/`pageSize`. Фильтр и видимость — те же функции, что у списка (`buildLeadWhere` + `visibilityFilter`), `organizationId` только из сессии.
+- Ответ 200: `Content-Type: text/csv; charset=utf-8`, `Content-Disposition: attachment; filename="leads-YYYYMMDD-HHmm.csv"`, тело начинается с BOM `\uFEFF`, разделитель `,`, перевод строки CRLF, экранирование по RFC 4180 + префикс `'` для значений, начинающихся с `= + - @ \t \r`.
+- Колонки — FR-064. Даты — `ДД.ММ.ГГГГ ЧЧ:мм` (`Asia/Tashkent`); `budgetAmount` — целое число строкой.
+- Лимит `EXPORT_MAX_ROWS` (50 000): при превышении — 422 `EXPORT_TOO_LARGE` (сузьте фильтры).
+- Аудит: `LEADS_EXPORTED` `{rows, filters}` (фильтры без `q`, чтобы не писать поисковые строки с ПДн; только признак `hasSearch`). Продуктовое событие `leads_exported`.
 
 #### POST `/intake/leads` (FR-063)
 - Заголовок `X-Api-Key: vpk_…`; тело `IntakeLeadRequest` = `CreateLeadRequest` без `assigneeId` + `externalId?: string(1..100)`.
@@ -801,7 +809,7 @@ sequenceDiagram
 | 410 | `INVITATION_INVALID` | Приглашение |
 | 413 | `PAYLOAD_TOO_LARGE` | JSON >1 МБ, CSV >5 МБ |
 | 415 | `UNSUPPORTED_FILE` | Не CSV / не UTF-8 |
-| 422 | `INVALID_STATUS_TRANSITION`, `FIRST_CONTACT_ALREADY_RECORDED`, `ASSIGNEE_INVALID`, `CANNOT_MODIFY_SELF`, `API_KEY_LIMIT` | Бизнес-правила |
+| 422 | `INVALID_STATUS_TRANSITION`, `FIRST_CONTACT_ALREADY_RECORDED`, `ASSIGNEE_INVALID`, `CANNOT_MODIFY_SELF`, `API_KEY_LIMIT`, `EXPORT_TOO_LARGE` | Бизнес-правила |
 | 429 | `RATE_LIMITED` | Лимиты, с `Retry-After` |
 | 500 | `INTERNAL_ERROR` | Непредвиденное; детали только в логах |
 | 503 | `SERVICE_UNAVAILABLE` | БД недоступна (`/health/ready`) |
@@ -812,7 +820,7 @@ sequenceDiagram
 ## 15. Интеграции
 
 ### 15.1. CSV-импорт
-См. §13.4. Дополнительно: удаление BOM; обрезка пробелов; пустые строки пропускаются; значения не интерпретируются как формулы (импорт хранит текст как есть; при будущем экспорте CSV — экранирование `=`, `+`, `-`, `@`).
+См. §13.4. Дополнительно: удаление BOM; обрезка пробелов; пустые строки пропускаются; значения не интерпретируются как формулы (импорт хранит текст как есть; при экспорте CSV, FR-064 — экранирование `=`, `+`, `-`, `@`). Экспорт — §13.4 `GET /leads/export.csv`, ADR-019.
 
 ### 15.2. Intake API
 Пример для документации (README будет создан вместе с кодом):
@@ -1078,6 +1086,8 @@ docker compose exec api pnpm db:seed:demo
 | `INTAKE_RATE_LIMIT_PER_MIN` | api | `60` | нет |
 | `AUTH_IP_RATE_LIMIT_PER_MIN` | api | `30` | нет |
 | `DEMO_SEED_PASSWORD` | api (сид) | задаётся локально; печатается сидом | для сида |
+| `EXPORT_MAX_ROWS` | api | `50000` (FR-064) | нет |
+| `DISABLED_FEATURES` | api | пусто; список флагов cut-line через запятую: `AUDIT_LOG_UI,WEEKLY_SUMMARY,BUSINESS_HOURS,DAILY_CHART,CSV_IMPORT_PREVIEW,DEAL_SCORE` (ADR-020) | нет |
 | `VITE_API_BASE_URL` | web (build) | `/api/v1` | нет |
 | `VITE_DEFAULT_LOCALE` | web (build) | `ru` | нет |
 
