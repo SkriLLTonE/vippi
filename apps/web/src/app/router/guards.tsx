@@ -1,5 +1,5 @@
 import type { FeatureFlag, Permission } from '@vippi/shared';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Navigate, useLocation } from 'react-router';
 import { homePath, useCan, useFeature, useMeQuery, useSession } from '@/entities/session';
@@ -41,11 +41,17 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   return children;
 }
 
-/** Login/registration screens: a signed-in user goes straight to the start page. */
+/**
+ * Login/registration screens: a user who opens them while already signed in goes to the start page.
+ * The decision is made once, so a session created by the page itself (login, registration) does
+ * not override the page's own redirect (`?next=`, onboarding).
+ */
 export function GuestOnly({ children }: { children: ReactNode }) {
   const me = useMeQuery();
-  if (me.isPending) return <FullScreenLoader />;
-  if (me.data) return <Navigate to={homePath(me.data)} replace />;
+  const [signedInOnEntry, setSignedInOnEntry] = useState<boolean | null>(null);
+  if (signedInOnEntry === null && !me.isPending) setSignedInOnEntry(!!me.data);
+  if (signedInOnEntry === null) return <FullScreenLoader />;
+  if (signedInOnEntry && me.data) return <Navigate to={homePath(me.data)} replace />;
   return children;
 }
 

@@ -117,11 +117,25 @@ function InviteDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v:
   );
 }
 
+/** Page-level action, available from both team tabs (UX §9.1). */
+export function InviteButton() {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)} data-testid="invite-button">
+        <UserPlus aria-hidden />
+        {t('team.invite')}
+      </Button>
+      <InviteDialog open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
 export function InvitationsTab() {
   const { t } = useTranslation();
   const me = useSession();
   const qc = useQueryClient();
-  const [inviteOpen, setInviteOpen] = useState(false);
   const [revoking, setRevoking] = useState<InvitationDto | null>(null);
   const list = useQuery({
     queryKey: invitationKeys.all,
@@ -140,12 +154,6 @@ export function InvitationsTab() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex justify-end">
-        <Button onClick={() => setInviteOpen(true)} data-testid="invite-button">
-          <UserPlus aria-hidden />
-          {t('team.invite')}
-        </Button>
-      </div>
       {list.isPending ? (
         <DelayedSkeleton>
           <Skeleton className="h-24" />
@@ -186,7 +194,6 @@ export function InvitationsTab() {
           </tbody>
         </Table>
       )}
-      <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} />
       <ConfirmDialog
         open={!!revoking}
         onOpenChange={(v) => (v ? undefined : setRevoking(null))}
