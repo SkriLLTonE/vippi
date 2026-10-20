@@ -400,6 +400,7 @@ export class AiService {
     const sources = dash.bySource.filter((s) => s.breachedRate !== null);
     const worstSource = sources.sort((a, b) => (b.breachedRate ?? 0) - (a.breachedRate ?? 0))[0];
     const aggregates: WeeklyAggregates = {
+      periodDays: 7,
       totalLeads: dash.kpis.totalLeads,
       medianFirstResponseMinutes:
         dash.kpis.medianFirstResponseSeconds === null ? null : Math.round(dash.kpis.medianFirstResponseSeconds / 60),

@@ -75,6 +75,7 @@ export function templateReply(input: ReplyTemplateInput, language: Locale, tone:
 }
 
 export interface WeeklyAggregates {
+  periodDays: number;
   totalLeads: number;
   medianFirstResponseMinutes: number | null;
   slaThresholdMinutes: number;
@@ -88,7 +89,7 @@ export interface WeeklyAggregates {
 export function templateWeeklySummary(a: WeeklyAggregates, locale: Locale): WeeklySummary {
   const b: string[] = [];
   if (locale === 'ru') {
-    b.push(`За 7 дней поступило лидов: ${a.totalLeads}.`);
+    b.push(`За ${a.periodDays} дней поступило лидов: ${a.totalLeads}.`);
     b.push(
       a.medianFirstResponseMinutes === null
         ? 'Медиану времени ответа посчитать нельзя: нет лидов с первым контактом.'
@@ -104,7 +105,7 @@ export function templateWeeklySummary(a: WeeklyAggregates, locale: Locale): Week
     if (a.worstSource) b.push(`Источник с наибольшей долей просрочек: ${a.worstSource.source} (${a.worstSource.breachedPercent}%).`);
     b.push(`Сейчас без реакции: ${a.noReactionNow} лид(ов).`);
   } else {
-    b.push(`7 kunda kelgan lidlar: ${a.totalLeads}.`);
+    b.push(`${a.periodDays} kunda kelgan lidlar: ${a.totalLeads}.`);
     b.push(
       a.medianFirstResponseMinutes === null
         ? "Javob vaqti medianasini hisoblab bo'lmaydi: birinchi aloqa qilingan lidlar yo'q."

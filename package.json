@@ -1,7 +1,8 @@
 {
   "name": "vippi-leads",
-  "private": true,
   "version": "0.1.0",
+  "private": true,
+  "type": "module",
   "description": "Vippi Leads — demo MVP: lead response control for Tashkent real estate",
   "packageManager": "pnpm@12.14.0",
   "engines": {

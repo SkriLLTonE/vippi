@@ -5,14 +5,14 @@
   "scripts": {
     "build": "prisma generate && tsc -p tsconfig.build.json",
     "dev": "prisma generate && tsc -p tsconfig.build.json && node scripts/dev.mjs",
-    "start": "node dist/src/main.js",
+    "start": "node --env-file-if-exists=../../.env dist/src/main.js",
     "typecheck": "prisma generate && tsc -p tsconfig.json --noEmit",
     "test": "vitest run --project unit",
     "test:integration": "node scripts/prepare-test-db.mjs && vitest run --project integration",
     "test:coverage": "node scripts/prepare-test-db.mjs && vitest run --coverage",
-    "db:migrate": "prisma migrate deploy",
-    "db:migrate:dev": "prisma migrate dev",
-    "db:seed:demo": "node dist/prisma/seed/demo.js"
+    "db:migrate": "node scripts/prisma.mjs migrate deploy",
+    "db:migrate:dev": "node scripts/prisma.mjs migrate dev",
+    "db:seed:demo": "node --env-file-if-exists=../../.env dist/prisma/seed/demo.js"
   },
   "dependencies": {
     "@google/genai": "^2.30.0",
