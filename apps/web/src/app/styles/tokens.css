@@ -1,0 +1,47 @@
+:root {
+  --background: #ffffff;
+  --background-subtle: #f8fafc;
+  --surface: #ffffff;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --foreground: #0f172a;
+  --muted-foreground: #475569;
+  --subtle-foreground: #64748b;
+  --primary: #4338ca;
+  --primary-hover: #3730a3;
+  --primary-subtle: #eef2ff;
+  --primary-foreground: #ffffff;
+  --ring: #6366f1;
+
+  --success: #15803d;
+  --success-bg: #f0fdf4;
+  --success-border: #bbf7d0;
+  --warning: #b45309;
+  --warning-bg: #fffbeb;
+  --warning-border: #fde68a;
+  --danger: #b91c1c;
+  --danger-bg: #fef2f2;
+  --danger-border: #fecaca;
+  --info: #0369a1;
+  --info-bg: #f0f9ff;
+  --info-border: #bae6fd;
+
+  --status-new: #0369a1;
+  --status-new-bg: #f0f9ff;
+  --status-contacted: #6d28d9;
+  --status-contacted-bg: #f5f3ff;
+  --status-qualified: #0f766e;
+  --status-qualified-bg: #f0fdfa;
+  --status-won: #15803d;
+  --status-won-bg: #f0fdf4;
+  --status-lost: #475569;
+  --status-lost-bg: #f1f5f9;
+
+  --score-hot: #c2410c;
+  --score-hot-bg: #fff7ed;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+}

@@ -131,7 +131,7 @@ export type OverdueQuery = z.infer<typeof OverdueQuerySchema>;
 export const FirstContactSchema = z
   .object({
     channel: z.enum(CONTACT_CHANNELS),
-    comment: z.string().trim().min(1).max(2000).optional(),
+    comment: z.string().trim().min(1, { message: 'required' }).max(2000).optional(),
   })
   .strict();
 export type FirstContactRequest = z.infer<typeof FirstContactSchema>;

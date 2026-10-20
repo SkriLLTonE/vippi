@@ -25,7 +25,7 @@ export type RegisterOrganizationRequest = z.infer<typeof RegisterOrganizationSch
 export const LoginSchema = z
   .object({
     email: emailSchema,
-    password: z.string().min(1).max(128),
+    password: z.string().min(1, { message: 'required' }).max(128),
   })
   .strict();
 export type LoginRequest = z.infer<typeof LoginSchema>;
@@ -40,7 +40,7 @@ export type UpdateProfileRequest = z.infer<typeof UpdateProfileSchema>;
 
 export const ChangePasswordSchema = z
   .object({
-    currentPassword: z.string().min(1).max(128),
+    currentPassword: z.string().min(1, { message: 'required' }).max(128),
     newPassword: passwordSchema,
   })
   .strict();

@@ -10,3 +10,6 @@ allowBuilds:
   argon2: true
   prisma: true
   protobufjs: false
+minimumReleaseAgeExclude:
+  - lucide-react@1.60.0
+  - steiger@0.8.0
