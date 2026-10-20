@@ -1,0 +1,158 @@
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
+import {
+  AcceptInvitationSchema,
+  ChangeRoleSchema,
+  CreateApiKeySchema,
+  CreateInvitationSchema,
+  UpdateOrganizationSchema,
+  type AcceptInvitationRequest,
+  type ChangeRoleRequest,
+  type CreateApiKeyRequest,
+  type CreateInvitationRequest,
+  type UpdateOrganizationRequest,
+} from '@vippi/shared';
+import { z } from 'zod';
+import type { Actor } from '../../common/actor.js';
+import { CurrentActor, Public, RequirePermission } from '../../common/decorators.js';
+import { UuidParam } from '../../common/params.js';
+import { RequestMeta, type ReqMeta } from '../../common/req-meta.js';
+import { ApiZodBody, ZodPipe } from '../../common/zod.js';
+import { SessionsService } from '../identity-access/sessions.service.js';
+import { ApiKeysService } from './api-keys.service.js';
+import { InvitationsService } from './invitations.service.js';
+import { MembersService } from './members.service.js';
+import { OrganizationsService } from './organizations.service.js';
+
+const PreviewQuerySchema = z.object({ token: z.string().min(20).max(100) }).strict();
+
+@ApiTags('organization')
+@Controller()
+export class OrganizationsController {
+  constructor(
+    private readonly orgs: OrganizationsService,
+    private readonly members: MembersService,
+    private readonly invitations: InvitationsService,
+    private readonly apiKeys: ApiKeysService,
+    private readonly sessions: SessionsService,
+  ) {}
+
+  @Get('organization')
+  @RequirePermission('org.read')
+  getOrg(@CurrentActor() actor: Actor) {
+    return this.orgs.get(actor.orgId);
+  }
+
+  @Patch('organization')
+  @RequirePermission('org.manage')
+  @ApiZodBody(UpdateOrganizationSchema)
+  updateOrg(
+    @CurrentActor() actor: Actor,
+    @Body(new ZodPipe(UpdateOrganizationSchema)) body: UpdateOrganizationRequest,
+    @RequestMeta() meta: ReqMeta,
+  ) {
+    return this.orgs.update(actor, body, meta);
+  }
+
+  @Get('members')
+  @RequirePermission('member.read')
+  listMembers(@CurrentActor() actor: Actor) {
+    return this.members.list(actor);
+  }
+
+  @Patch('members/:id')
+  @RequirePermission('member.manage')
+  @HttpCode(204)
+  @ApiZodBody(ChangeRoleSchema)
+  async changeRole(
+    @CurrentActor() actor: Actor,
+    @Param('id', UuidParam) id: string,
+    @Body(new ZodPipe(ChangeRoleSchema)) body: ChangeRoleRequest,
+    @RequestMeta() meta: ReqMeta,
+  ): Promise<void> {
+    await this.members.changeRole(actor, id, body, meta);
+  }
+
+  @Post('members/:id/deactivate')
+  @RequirePermission('member.manage')
+  @HttpCode(200)
+  deactivate(@CurrentActor() actor: Actor, @Param('id', UuidParam) id: string, @RequestMeta() meta: ReqMeta) {
+    return this.members.deactivate(actor, id, meta);
+  }
+
+  @Get('invitations')
+  @RequirePermission('invitation.manage')
+  listInvitations(@CurrentActor() actor: Actor) {
+    return this.invitations.listPending(actor);
+  }
+
+  @Post('invitations')
+  @RequirePermission('invitation.manage')
+  @ApiZodBody(CreateInvitationSchema)
+  createInvitation(
+    @CurrentActor() actor: Actor,
+    @Body(new ZodPipe(CreateInvitationSchema)) body: CreateInvitationRequest,
+    @RequestMeta() meta: ReqMeta,
+  ) {
+    return this.invitations.create(actor, body, meta);
+  }
+
+  @Post('invitations/:id/revoke')
+  @RequirePermission('invitation.manage')
+  @HttpCode(204)
+  async revokeInvitation(
+    @CurrentActor() actor: Actor,
+    @Param('id', UuidParam) id: string,
+    @RequestMeta() meta: ReqMeta,
+  ): Promise<void> {
+    await this.invitations.revoke(actor, id, meta);
+  }
+
+  @Get('invitations/preview')
+  @Public()
+  preview(@Query(new ZodPipe(PreviewQuerySchema)) q: { token: string }) {
+    return this.invitations.preview(q.token);
+  }
+
+  @Post('invitations/accept')
+  @Public()
+  @ApiZodBody(AcceptInvitationSchema)
+  async accept(
+    @Body(new ZodPipe(AcceptInvitationSchema)) body: AcceptInvitationRequest,
+    @RequestMeta() meta: ReqMeta,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { token, me } = await this.invitations.accept(body, meta);
+    this.sessions.setCookie(res, token);
+    return me;
+  }
+
+  @Get('api-keys')
+  @RequirePermission('apiKey.manage')
+  listKeys(@CurrentActor() actor: Actor) {
+    return this.apiKeys.list(actor);
+  }
+
+  @Post('api-keys')
+  @RequirePermission('apiKey.manage')
+  @ApiZodBody(CreateApiKeySchema)
+  createKey(
+    @CurrentActor() actor: Actor,
+    @Body(new ZodPipe(CreateApiKeySchema)) body: CreateApiKeyRequest,
+    @RequestMeta() meta: ReqMeta,
+  ) {
+    return this.apiKeys.create(actor, body, meta);
+  }
+
+  @Post('api-keys/:id/revoke')
+  @RequirePermission('apiKey.manage')
+  @HttpCode(204)
+  async revokeKey(
+    @CurrentActor() actor: Actor,
+    @Param('id', UuidParam) id: string,
+    @RequestMeta() meta: ReqMeta,
+  ): Promise<void> {
+    await this.apiKeys.revoke(actor, id, meta);
+  }
+}
