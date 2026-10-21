@@ -5,7 +5,12 @@ import type { FeatureFlags } from '../features.js';
 import type { Permission } from '../permissions.js';
 import { emailSchema, localeSchema, passwordSchema } from './common.js';
 
-const nameSchema = z.string().trim().min(2, { message: 'too_short' }).max(100);
+const nameSchema = z
+  .string()
+  .trim()
+  .min(1, { message: 'required' })
+  .min(2, { message: 'too_short' })
+  .max(100);
 
 export const RegisterOrganizationSchema = z
   .object({
