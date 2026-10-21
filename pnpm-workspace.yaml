@@ -10,10 +10,12 @@ allowBuilds:
   argon2: true
   prisma: true
   protobufjs: false
-# Security overrides (pnpm audit): GHSA for deepmerge-ts <8 (via prisma) and js-yaml <=5.4.0 (via @nestjs/swagger).
+# Security overrides (pnpm audit): GHSA for deepmerge-ts <8 (via prisma), js-yaml <=5.4.0 (via @nestjs/swagger),
+# uuid <11.1.1 (via autocannon > hyperid, which only calls require('uuid').v4).
 overrides:
   deepmerge-ts: ^8.0.0
   js-yaml: ^5.4.1
+  hyperid>uuid: ^11.1.1
 minimumReleaseAgeExclude:
   - lucide-react@1.60.0
   - steiger@0.8.0
