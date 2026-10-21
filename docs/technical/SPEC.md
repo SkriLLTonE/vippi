@@ -877,7 +877,7 @@ export interface AiProvider {
   }): Promise<{ raw: string; usage: { inputTokens: number; outputTokens: number } }>;
 }
 ```
-В MVP реализован один адаптер — `GeminiProvider` (CONFIRMED, ADR-010): SDK `@google/genai`, нативный режим структурированного вывода (`responseMimeType: application/json` + JSON Schema из `z.toJSONSchema`), имя модели — из `AI_MODEL` (актуальное имя проверить при получении ключа). `ProviderFactory` выбирает адаптер по `AI_PROVIDER` (`none` | `gemini`); при `none` или пустом `GEMINI_API_KEY` → `null` (режим `NO_PROVIDER_CONFIGURED`). Добавление OpenAI/Anthropic после MVP = новый файл-адаптер + значение enum + ветка в фабрике; `AiService`, промпты, схемы и fallback не меняются.
+В MVP реализован один адаптер — `GeminiProvider` (CONFIRMED, ADR-010): SDK `@google/genai`, нативный режим структурированного вывода (`responseMimeType: application/json` + JSON Schema из `z.toJSONSchema`), имя модели — из `AI_MODEL` (по умолчанию `gemini-3.5-flash-lite`; выбор и замеры — [docs/ai/ai-evaluation.md](../ai/ai-evaluation.md)). Токены «размышлений» Gemini 3.x входят в `maxOutputTokens` и оплачиваются как выходные, поэтому к лимиту вывода добавлен запас 1024 токена, а ответ с `finishReason=MAX_TOKENS` считается ошибкой провайдера (→ fallback). `ProviderFactory` выбирает адаптер по `AI_PROVIDER` (`none` | `gemini`); при `none` или пустом `GEMINI_API_KEY` → `null` (режим `NO_PROVIDER_CONFIGURED`). Добавление OpenAI/Anthropic после MVP = новый файл-адаптер + значение enum + ветка в фабрике; `AiService`, промпты, схемы и fallback не меняются.
 
 **Правовое условие:** до обработки реальных данных клиентов — юридическая проверка трансграничной передачи в Google (PRD §22, TBD-6); до этого `aiExternalProcessingEnabled=true` допускается только в демо-организации с синтетическими данными.
 
@@ -1086,7 +1086,8 @@ docker compose exec api pnpm db:seed:demo
 | `SLA_CRON_ENABLED` | api | `true` (в тестах `false`) | нет |
 | `SLA_SCAN_BATCH_SIZE` | api | `500` | нет |
 | `AI_PROVIDER` | api | `none` \| `gemini` | нет (`none`) |
-| `AI_MODEL` | api | модель провайдера (проверить актуальное имя при подключении) | при `AI_PROVIDER≠none` |
+| `AI_MODEL` | api | `gemini-3.5-flash-lite` (stable, проверено по docs 21.10.2026) | нет |
+| `AI_THINKING_LEVEL` | api | не задан (умолчание модели) \| `minimal` \| `low` \| `medium` \| `high` | нет |
 | `GEMINI_API_KEY` | api | — | при `AI_PROVIDER=gemini` |
 | `AI_TIMEOUT_MS` | api | `15000` | нет |
 | `AI_MAX_RETRIES` | api | `1` | нет |
