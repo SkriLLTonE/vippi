@@ -1,5 +1,14 @@
-import { ApiError, GoogleGenAI } from '@google/genai';
+import { ApiError, GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { AiProviderError, type AiGenerateRequest, type AiGenerateResult, type AiProvider } from './ai-provider.interface.js';
+
+export type GeminiThinkingLevel = 'minimal' | 'low' | 'medium' | 'high';
+
+const THINKING_LEVELS: Record<GeminiThinkingLevel, ThinkingLevel> = {
+  minimal: ThinkingLevel.MINIMAL,
+  low: ThinkingLevel.LOW,
+  medium: ThinkingLevel.MEDIUM,
+  high: ThinkingLevel.HIGH,
+};
 
 /** Google Gemini adapter (ADR-010): native structured output, no tools/functions. */
 export class GeminiProvider implements AiProvider {
@@ -9,6 +18,8 @@ export class GeminiProvider implements AiProvider {
   constructor(
     apiKey: string,
     readonly model: string,
+    /** Unset = model default. Supported levels differ per model (Gemini docs "Thinking"). */
+    private readonly thinkingLevel?: GeminiThinkingLevel,
   ) {
     this.client = new GoogleGenAI({ apiKey });
   }
@@ -22,18 +33,24 @@ export class GeminiProvider implements AiProvider {
           systemInstruction: req.system,
           responseMimeType: 'application/json',
           responseJsonSchema: req.jsonSchema,
+          // Thinking tokens count against this cap, so it includes headroom beyond the visible JSON.
           maxOutputTokens: req.maxOutputTokens,
           temperature: req.temperature,
           abortSignal: req.signal,
+          ...(this.thinkingLevel ? { thinkingConfig: { thinkingLevel: THINKING_LEVELS[this.thinkingLevel] } } : {}),
         },
       });
+      const finishReason = response.candidates?.[0]?.finishReason;
       const raw = response.text;
-      if (!raw) throw new AiProviderError('Empty response', null, false);
+      if (!raw) throw new AiProviderError(`Empty response (finishReason ${finishReason ?? 'none'})`, null, false);
+      if (finishReason === 'MAX_TOKENS') throw new AiProviderError('Output truncated (MAX_TOKENS)', null, false);
+      const usage = response.usageMetadata;
       return {
         raw,
         usage: {
-          inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
-          outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
+          inputTokens: usage?.promptTokenCount ?? 0,
+          // Thinking tokens are billed as output (Gemini pricing), so they count towards the daily token cap.
+          outputTokens: (usage?.candidatesTokenCount ?? 0) + (usage?.thoughtsTokenCount ?? 0),
         },
       };
     } catch (e) {

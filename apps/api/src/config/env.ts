@@ -31,7 +31,9 @@ const EnvSchema = z
     EXPORT_MAX_ROWS: z.coerce.number().int().min(1).default(50_000),
     DISABLED_FEATURES: z.string().optional(),
     AI_PROVIDER: z.enum(['none', 'gemini']).default('none'),
-    AI_MODEL: z.string().default('gemini-2.5-flash'),
+    AI_MODEL: z.string().default('gemini-3.5-flash-lite'),
+    /** Gemini thinking level; unset = model default (gemini-3.5-flash-lite: minimal). */
+    AI_THINKING_LEVEL: z.enum(['minimal', 'low', 'medium', 'high']).optional(),
     GEMINI_API_KEY: z.string().optional(),
     AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(15_000),
     AI_MAX_RETRIES: z.coerce.number().int().min(0).max(3).default(1),

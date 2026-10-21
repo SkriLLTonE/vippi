@@ -71,10 +71,34 @@ describe('GeminiProvider (ADR-010, mocked SDK)', () => {
     expect(res.usage).toEqual({ inputTokens: 0, outputTokens: 0 });
   });
 
-  it('empty response is a non-retryable error', async () => {
-    generateContent.mockResolvedValue({ text: '' });
+  it('empty response is a non-retryable error with the finish reason', async () => {
+    generateContent.mockResolvedValue({ text: '', candidates: [{ finishReason: 'MAX_TOKENS' }] });
     const e = await providerError(new GeminiProvider('k', 'm').generateJson(request()));
-    expect(e).toMatchObject({ message: 'Empty response', status: null, retryable: false });
+    expect(e).toMatchObject({ message: 'Empty response (finishReason MAX_TOKENS)', status: null, retryable: false });
+  });
+
+  it('truncated JSON (MAX_TOKENS) is rejected instead of parsed', async () => {
+    generateContent.mockResolvedValue({ text: '{"summary":"Ищет', candidates: [{ finishReason: 'MAX_TOKENS' }] });
+    const e = await providerError(new GeminiProvider('k', 'm').generateJson(request()));
+    expect(e).toMatchObject({ message: 'Output truncated (MAX_TOKENS)', retryable: false });
+  });
+
+  it('thinking tokens are billed as output and counted', async () => {
+    generateContent.mockResolvedValue({
+      text: '{}',
+      candidates: [{ finishReason: 'STOP' }],
+      usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 40, thoughtsTokenCount: 300 },
+    });
+    const res = await new GeminiProvider('k', 'm').generateJson(request());
+    expect(res.usage).toEqual({ inputTokens: 100, outputTokens: 340 });
+  });
+
+  it('passes the configured thinking level; none configured → model default', async () => {
+    generateContent.mockResolvedValue({ text: '{}' });
+    await new GeminiProvider('k', 'gemini-3.8-flash', 'low').generateJson(request());
+    expect(generateContent.mock.calls[0]?.[0].config.thinkingConfig).toEqual({ thinkingLevel: 'LOW' });
+    await new GeminiProvider('k', 'gemini-3.5-flash-lite').generateJson(request());
+    expect(generateContent.mock.calls[1]?.[0].config).not.toHaveProperty('thinkingConfig');
   });
 
   it.each([
