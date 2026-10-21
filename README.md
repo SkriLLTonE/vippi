@@ -24,6 +24,10 @@ WEB_PORT=8081 docker compose up -d --build
 
 За доменом или прокси: `STACK_PUBLIC_URL=https://ваш-домен docker compose up -d`. `PUBLIC_APP_URL` из `.env` в Docker-стеке не используется (он для `pnpm dev`). Если origin не совпадает, вход и любые изменения отклоняются с `403 ORIGIN_MISMATCH`, а в логе API появляется `origin mismatch` с полученным и ожидаемым origin.
 
+Если не получается войти:
+- открывайте адрес ровно как `http://localhost:<WEB_PORT>`: с `127.0.0.1` вход отклоняется («Запрос отклонён из соображений безопасности»);
+- «Сервер не отвечает» значит, что стек был остановлен или перезапускался, пока страница была открыта: дождитесь `docker compose ps` → `healthy` и обновите страницу (Ctrl+F5).
+
 Swagger: `/api/docs` (при `SWAGGER_ENABLED=true`).
 
 ## Публичное демо на Render (free)

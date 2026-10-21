@@ -623,7 +623,7 @@
     "RATE_LIMITED_retry": "Urinishlar juda koʻp. {{minutes}} daqiqadan keyin qayta urinib koʻring",
     "INTERNAL_ERROR": "Serverda xatolik. Keyinroq qayta urinib koʻring",
     "SERVICE_UNAVAILABLE": "Xizmat vaqtincha ishlamayapti. Bir daqiqadan keyin qayta urinib koʻring",
-    "NETWORK_ERROR": "Server bilan aloqa yoʻq. Internetni tekshirib, qayta urinib koʻring"
+    "NETWORK_ERROR": "Server javob bermayapti. Bir daqiqa kutib, sahifani yangilang; server qayta ishga tushgan boʻlsa, qaytadan kiring"
   },
   "validation": {
     "assignee_invalid": "Bu xodimni biriktirib boʻlmaydi",
