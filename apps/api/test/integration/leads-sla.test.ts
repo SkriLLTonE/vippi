@@ -73,7 +73,9 @@ describe('leads', () => {
     await owner.post(`/leads/${lead.id}/assign`, { assigneeId: m2.userId });
     const audit = (await owner.get('/audit-logs?action=LEAD_REASSIGNED')).body;
     expect(audit.total).toBe(1);
-    const bad = await owner.post(`/leads/${lead.id}/assign`, { assigneeId: '00000000-0000-4000-8000-000000000000' });
+    const bad = await owner.post(`/leads/${lead.id}/assign`, {
+      assigneeId: '00000000-0000-4000-8000-000000000000',
+    });
     expect(bad.status).toBe(422);
     expect(bad.body.error.code).toBe('ASSIGNEE_INVALID');
   });
@@ -84,7 +86,10 @@ describe('leads', () => {
     const m = await addMember(ctx, owner, 'MANAGER');
     const lead = await createLead(m);
     ctx.clock.advance(10 * 60_000);
-    const r = await m.post(`/leads/${lead.id}/first-contact`, { channel: 'TELEGRAM', comment: 'Wrote in Telegram' });
+    const r = await m.post(`/leads/${lead.id}/first-contact`, {
+      channel: 'TELEGRAM',
+      comment: 'Wrote in Telegram',
+    });
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ status: 'CONTACTED', slaState: 'MET', firstResponseChannel: 'TELEGRAM' });
     const again = await m.post(`/leads/${lead.id}/first-contact`, { channel: 'CALL' });
@@ -116,11 +121,17 @@ describe('leads', () => {
     const m = await addMember(ctx, owner, 'MANAGER');
     const lead = await createLead(owner);
     expect((await m.patch(`/leads/${lead.id}`, { rooms: 3 })).status).toBe(403);
-    const upd = await head.patch(`/leads/${lead.id}`, { rooms: 3, budget: { amount: '60000', currency: 'USD' } });
+    const upd = await head.patch(`/leads/${lead.id}`, {
+      rooms: 3,
+      budget: { amount: '60000', currency: 'USD' },
+    });
     expect(upd.status).toBe(200);
     expect(upd.body.budget).toEqual({ amount: '60000', currency: 'USD' });
     const acts = (await owner.get(`/leads/${lead.id}/activities`)).body;
-    expect(acts[0]).toMatchObject({ type: 'FIELDS_UPDATED', payload: { fields: ['rooms', 'budget'], source: 'USER' } });
+    expect(acts[0]).toMatchObject({
+      type: 'FIELDS_UPDATED',
+      payload: { fields: ['rooms', 'budget'], source: 'USER' },
+    });
     expect((await head.delete(`/leads/${lead.id}`)).status).toBe(403);
     expect((await owner.delete(`/leads/${lead.id}`)).status).toBe(204);
     expect((await owner.get(`/leads/${lead.id}`)).status).toBe(404);
@@ -128,7 +139,7 @@ describe('leads', () => {
 
   it('comments and search with apostrophe normalization (FR-015, FR-017)', async () => {
     const owner = await registerOrg(ctx);
-    const lead = await createLead(owner, { message: "Mirzo Ulugʻbek tumanida uy kerak" });
+    const lead = await createLead(owner, { message: 'Mirzo Ulugʻbek tumanida uy kerak' });
     await createLead(owner, { message: 'Квартира в Чиланзаре', phone: '+998001111111' });
     const c = await owner.post(`/leads/${lead.id}/comments`, { body: 'Called, no answer' });
     expect(c.status).toBe(201);
@@ -197,6 +208,108 @@ describe('SLA scheduler and notifications', () => {
     ctx.clock.advance(20 * 60_000);
     await ctx.app.get(SlaSchedulerService).runOnce(ctx.clock.now());
     expect((await owner.get('/notifications/unread-count')).body.count).toBe(1);
+  });
+
+  it('parallel runs breach each lead once and never duplicate notifications (NFR-003)', async () => {
+    ctx.clock.set(T0);
+    const owner = await registerOrg(ctx);
+    const head = await addMember(ctx, owner, 'HEAD_OF_SALES');
+    const m = await addMember(ctx, owner, 'MANAGER');
+    for (let i = 0; i < 5; i++) await createLead(m, { phone: `+99800300000${i}` });
+    ctx.clock.advance(20 * 60_000);
+    const scheduler = ctx.app.get(SlaSchedulerService);
+    const runs = await Promise.all([1, 2, 3, 4].map(() => scheduler.runOnce(ctx.clock.now())));
+    expect(runs.reduce((s, r) => s + r.breached, 0)).toBe(5);
+    expect(runs.reduce((s, r) => s + r.notifications, 0)).toBe(10);
+    expect(await scheduler.runOnce(ctx.clock.now())).toMatchObject({ breached: 0, notifications: 0 });
+    expect((await m.get('/notifications/unread-count')).body.count).toBe(5);
+    expect((await head.get('/notifications/unread-count')).body.count).toBe(5);
+    const events = await ctx.prisma.system.leadActivity.count({ where: { type: 'SLA_BREACHED' } });
+    expect(events).toBe(5);
+  });
+
+  it('deactivated assignee: lead is unassigned, breach goes to supervisors only (FR-008, FR-033)', async () => {
+    ctx.clock.set(T0);
+    const owner = await registerOrg(ctx);
+    const head = await addMember(ctx, owner, 'HEAD_OF_SALES');
+    const m = await addMember(ctx, owner, 'MANAGER');
+    const lead = await createLead(m);
+    const membership = ((await owner.get('/members')).body as Array<{ id: string; userId: string }>).find(
+      (x) => x.userId === m.userId,
+    );
+    expect((await owner.post(`/members/${membership?.id}/deactivate`)).status).toBeLessThan(300);
+    const after = (await owner.get(`/leads/${lead.id}`)).body;
+    expect(after.assignee).toBeNull();
+    expect(after.firstResponseDueAt).toBe(lead.firstResponseDueAt);
+    ctx.clock.advance(20 * 60_000);
+    const run = await ctx.app.get(SlaSchedulerService).runOnce(ctx.clock.now());
+    expect(run).toMatchObject({ breached: 1, notifications: 1 });
+    expect((await head.get('/notifications')).body.items[0]).toMatchObject({
+      type: 'SLA_BREACHED',
+      leadId: lead.id,
+    });
+    const toManager = await ctx.prisma.system.notification.count({ where: { userId: m.userId } });
+    expect(toManager).toBe(0);
+  });
+
+  it('first contact racing the scheduler leaves one consistent outcome (T-013)', async () => {
+    ctx.clock.set(T0);
+    const owner = await registerOrg(ctx);
+    const m = await addMember(ctx, owner, 'MANAGER');
+    const scheduler = ctx.app.get(SlaSchedulerService);
+    for (let round = 0; round < 5; round++) {
+      const lead = await createLead(m, { phone: `+99800400000${round}` });
+      ctx.clock.set(new Date(new Date(lead.firstResponseDueAt).getTime() + 1_000));
+      const [contact] = await Promise.all([
+        m.post(`/leads/${lead.id}/first-contact`, { channel: 'CALL' }),
+        scheduler.runOnce(ctx.clock.now()),
+      ]);
+      expect(contact.status).toBe(200);
+      const dto = (await m.get(`/leads/${lead.id}`)).body;
+      expect(dto.slaState).toBe('BREACHED');
+      expect(dto.firstResponseAt).not.toBeNull();
+      expect(dto.slaBreachedAt).toBe(dto.firstResponseDueAt);
+      const breachEvents = await ctx.prisma.system.leadActivity.count({
+        where: { leadId: lead.id, type: 'SLA_BREACHED' },
+      });
+      expect(breachEvents).toBeLessThanOrEqual(1);
+      expect(await scheduler.runOnce(ctx.clock.now())).toMatchObject({ breached: 0 });
+      ctx.clock.set(T0);
+    }
+  });
+
+  it('first contact before the deadline is MET and the scheduler skips it', async () => {
+    ctx.clock.set(T0);
+    const owner = await registerOrg(ctx);
+    const lead = await createLead(owner);
+    ctx.clock.advance(14 * 60_000 + 59_000);
+    expect((await owner.post(`/leads/${lead.id}/first-contact`, { channel: 'TELEGRAM' })).body.slaState).toBe(
+      'MET',
+    );
+    ctx.clock.advance(60 * 60_000);
+    expect(await ctx.app.get(SlaSchedulerService).runOnce(ctx.clock.now())).toMatchObject({
+      breached: 0,
+      notifications: 0,
+    });
+  });
+
+  it('changing the SLA threshold affects new leads only (FR-030)', async () => {
+    ctx.clock.set(T0);
+    const owner = await registerOrg(ctx);
+    const before = await createLead(owner);
+    const put = await owner.put('/sla-policy', {
+      firstResponseMinutes: 60,
+      forgottenAfterHours: 24,
+      businessHoursEnabled: false,
+      workdays: [1, 2, 3, 4, 5],
+      workStart: '09:00',
+      workEnd: '18:00',
+    });
+    expect(put.status).toBe(200);
+    const after = await createLead(owner, { phone: '+998005555555' });
+    expect(before.firstResponseDueAt).toBe('2026-10-19T05:15:00.000Z');
+    expect(after.firstResponseDueAt).toBe('2026-10-19T06:00:00.000Z');
+    expect((await owner.get(`/leads/${before.id}`)).body.firstResponseDueAt).toBe('2026-10-19T05:15:00.000Z');
   });
 
   it('business hours: lead received at night is due 15 min after the workday starts (FR-031)', async () => {
