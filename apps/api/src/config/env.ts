@@ -11,10 +11,17 @@ const EnvSchema = z
     API_PORT: z.coerce.number().int().positive().default(3000),
     DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
     PUBLIC_APP_URL: z.url('PUBLIC_APP_URL must be a URL'),
-    COOKIE_SECURE: bool.default(false),
+    /** Defaults to true when PUBLIC_APP_URL is https (see loadConfig). */
+    COOKIE_SECURE: bool.optional(),
     SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(30).default(7),
     SESSION_ABSOLUTE_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
-    TRUST_PROXY: bool.default(false),
+    /** Number of reverse-proxy hops in front of the API (Express `trust proxy`); `true` = 1, `false` = 0. */
+    TRUST_PROXY: z
+      .union([z.enum(['true', 'false']), z.coerce.number().int().min(0).max(10)])
+      .transform((v) => (v === 'true' ? 1 : v === 'false' ? 0 : v))
+      .default(0),
+    /** Built web app (apps/web/dist). When set, the API also serves the SPA on the same origin (ADR-022). */
+    WEB_DIST_DIR: z.string().optional(),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
     SWAGGER_ENABLED: bool.default(true),
     SLA_CRON_ENABLED: bool.default(true),
@@ -35,6 +42,7 @@ const EnvSchema = z
   })
   .transform((e) => ({
     ...e,
+    COOKIE_SECURE: e.COOKIE_SECURE ?? new URL(e.PUBLIC_APP_URL).protocol === 'https:',
     publicOrigin: new URL(e.PUBLIC_APP_URL).origin,
     features: parseDisabledFeatures(e.DISABLED_FEATURES),
   }));
@@ -44,7 +52,10 @@ export type AppConfig = z.infer<typeof EnvSchema>;
 export const APP_CONFIG = Symbol('APP_CONFIG');
 
 export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
-  const cleaned = Object.fromEntries(Object.entries(source).filter(([, v]) => v !== ''));
+  const cleaned: Record<string, string | undefined> = Object.fromEntries(Object.entries(source).filter(([, v]) => v !== ''));
+  // Render injects PORT and RENDER_EXTERNAL_URL; explicit API_PORT / PUBLIC_APP_URL win.
+  cleaned.API_PORT ??= cleaned.PORT;
+  cleaned.PUBLIC_APP_URL ??= cleaned.RENDER_EXTERNAL_URL;
   const parsed = EnvSchema.safeParse(cleaned);
   if (!parsed.success) {
     const lines = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
