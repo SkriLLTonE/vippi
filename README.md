@@ -59,14 +59,24 @@ pnpm dev                           # API :3000, web :5173 (прокси /api →
 ```bash
 pnpm lint               # ESLint + steiger (границы FSD)
 pnpm typecheck
-pnpm test               # unit: shared, api, web
-pnpm test:integration   # API на реальной БД из DATABASE_URL_TEST (имя должно содержать "test")
+pnpm test               # unit: shared (152), api (97), web — Vitest + React Testing Library (49)
+pnpm test:integration   # API на реальной БД из DATABASE_URL_TEST (имя должно содержать "test"), 71 тест:
+                        # изоляция тенантов по всем маршрутам с :id × 3 роли, матрица прав, SLA-планировщик, AI с мок-провайдером
 pnpm i18n:check         # паритет ключей ru/uz и использование ключей в коде
 pnpm build
 pnpm test:e2e           # Playwright: основной сценарий (≈2 мин, ждёт реальную SLA-просрочку)
+                        # + адаптивность и доступность на 1440/768/390 и клавиатурная навигация
 ```
 
-E2E сам поднимает API (`:3000`) и `vite preview` (`:4173`); API должен получить `PUBLIC_APP_URL=http://localhost:4173`. Против Docker-стека: `E2E_BASE_URL=http://localhost:8081 pnpm test:e2e`. Перед первым запуском: `pnpm --filter @vippi/web exec playwright install chromium`.
+E2E сам поднимает API (`:3000`) и `vite preview` (`:4173`); API должен получить `PUBLIC_APP_URL=http://localhost:4173`. Против Docker-стека: `E2E_BASE_URL=http://localhost:8081 pnpm test:e2e`. Перед первым запуском: `pnpm --filter @vippi/web exec playwright install chromium`. Скриншоты для документации: `SCREENSHOTS_DIR=../../docs/delivery/screenshots pnpm --filter @vippi/web exec playwright test e2e/responsive-a11y.spec.ts` → [docs/delivery/screenshots](docs/delivery/screenshots/).
+
+**CI** (GitHub Actions, `.github/workflows/ci.yml`) на каждый push в `main` и PR:
+
+- lint + typecheck + i18n + build;
+- unit и интеграционные тесты (PostgreSQL 17 service) в TZ UTC / Asia/Tashkent / America/New_York;
+- Playwright E2E.
+
+**Нагрузка** (NFR-001): `pnpm --filter @vippi/api run load:seed` / `load:run` (autocannon) на отдельной БД — методика и результаты в [docs/delivery/load-test.md](docs/delivery/load-test.md).
 
 ## Ограничения MVP
 
