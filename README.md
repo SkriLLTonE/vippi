@@ -2,6 +2,8 @@
 
 Контроль скорости ответа на заявки для агентств недвижимости Ташкента: лиды из разных каналов, SLA первого ответа с уведомлениями о просрочке, AI-сводка и черновик ответа (с честным rule-based режимом без ключа), дашборд, импорт/экспорт CSV, intake API. Интерфейс на русском и узбекском (латиница), даты — `Asia/Tashkent`, суммы — UZS.
 
+**Впервые здесь?** Начните с [PROJECT-GUIDE.md](PROJECT-GUIDE.md) — что это за проект и как он устроен, простыми словами.
+
 Документы: [PRD](docs/product/PRD.md) · [SPEC](docs/technical/SPEC.md) · [UX-UI](docs/design/UX-UI-spec.md) · [design-system](docs/design/design-system.md) · [решения (ADR)](docs/discovery/decisions.md) · [план и статусы](docs/delivery/implementation-plan.md) · [сценарий демо](docs/delivery/demo-script.md) · [развёртывание](docs/delivery/deployment.md)
 
 ## Запуск в Docker (рекомендуется)
