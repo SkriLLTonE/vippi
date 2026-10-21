@@ -210,6 +210,33 @@ describe('SLA scheduler and notifications', () => {
     expect((await owner.get('/notifications/unread-count')).body.count).toBe(1);
   });
 
+  it('catch-up after a long sleep (ADR-022): one scan breaches everything overdue with slaBreachedAt = deadline', async () => {
+    ctx.clock.set(T0);
+    const owner = await registerOrg(ctx);
+    const m = await addMember(ctx, owner, 'MANAGER');
+    const early = await createLead(m, { phone: '+998004000001' });
+    ctx.clock.advance(5 * 60_000);
+    const later = await createLead(m, { phone: '+998004000002' });
+    // Instance asleep for 3 days: no cron ticks at all. Then it wakes and runs once.
+    ctx.clock.advance(3 * 24 * 60 * 60_000);
+    const fresh = await createLead(m, { phone: '+998004000003' });
+    const scheduler = ctx.app.get(SlaSchedulerService);
+    expect(await scheduler.runOnce(ctx.clock.now())).toMatchObject({ breached: 2 });
+    for (const lead of [early, later]) {
+      const row = await ctx.prisma.system.lead.findUniqueOrThrow({ where: { id: lead.id as string } });
+      expect(row.slaState).toBe('BREACHED');
+      expect(row.slaBreachedAt?.toISOString()).toBe(row.firstResponseDueAt.toISOString());
+    }
+    const freshRow = await ctx.prisma.system.lead.findUniqueOrThrow({ where: { id: fresh.id as string } });
+    expect(freshRow.slaState).toBe('PENDING');
+    const items = (await m.get('/notifications')).body.items as Array<{ type: string; payload: { overdueMinutes: number } }>;
+    expect(items.filter((n) => n.type === 'SLA_BREACHED').map((n) => n.payload.overdueMinutes).sort((a, b) => a - b)).toEqual([
+      3 * 24 * 60 - 15,
+      3 * 24 * 60 - 15 + 5,
+    ]);
+    expect(await scheduler.runOnce(ctx.clock.now())).toMatchObject({ breached: 0, notifications: 0 });
+  });
+
   it('parallel runs breach each lead once and never duplicate notifications (NFR-003)', async () => {
     ctx.clock.set(T0);
     const owner = await registerOrg(ctx);

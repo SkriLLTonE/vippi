@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { APP_CONFIG, type AppConfig } from '../../config/env.js';
 import { Clock } from '../../common/clock.js';
@@ -22,7 +22,7 @@ export interface SlaRunResult {
  * and unique notification dedupe keys.
  */
 @Injectable()
-export class SlaSchedulerService {
+export class SlaSchedulerService implements OnApplicationBootstrap {
   private readonly logger = new Logger(SlaSchedulerService.name);
   private running = false;
   lastRunAt: Date | null = null;
@@ -35,6 +35,14 @@ export class SlaSchedulerService {
     private readonly events: ProductEvents,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
+
+  /**
+   * Catch-up right after start (ADR-022): a sleeping free instance misses cron ticks, so the first scan
+   * must not wait for the next minute. Not awaited — startup and health checks must not block on it.
+   */
+  onApplicationBootstrap(): void {
+    if (this.config.SLA_CRON_ENABLED) void this.tick();
+  }
 
   @Cron(CronExpression.EVERY_MINUTE, { name: 'sla-scan' })
   async tick(): Promise<void> {
