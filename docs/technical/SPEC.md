@@ -1052,24 +1052,35 @@ docker compose exec api pnpm db:seed:demo
 ```
 Режим разработки: `docker compose up db` + `pnpm dev` (Vite :5173 с proxy `/api` → :3000, Nest watch).
 
-### 24.2. Путь на публичный URL (TBD хостинг)
-- Вариант A (PROPOSED): VM (2 vCPU / 4 ГБ) + тот же compose + Caddy/Traefik для TLS перед `web`.
-- Вариант B: PaaS с поддержкой Docker-образов + управляемый PostgreSQL.
-- Чек-лист: `COOKIE_SECURE=true`, `PUBLIC_APP_URL=https://…`, `TRUST_PROXY=true`, `SWAGGER_ENABLED=false`, сильный `POSTGRES_PASSWORD`, ежедневный `pg_dump`, `GEMINI_API_KEY` в секретах платформы, юридическая проверка трансграничной передачи в Google Gemini и хостинга перед реальными данными (H-12, TBD-6), страна хостинга — по перечню ПКМ №415.
+### 24.2. Публичное демо: Render free (ADR-022)
+
+| Ресурс | Конфигурация | Детали |
+|---|---|---|
+| `vippi-leads` (web, Docker, free) | корневой `Dockerfile`: shared → web (Vite) → api; рантайм `node:24-alpine`, non-root, `tini`, `--max-old-space-size=256` | один процесс NestJS: `/api/*` — API, остальное — SPA из `WEB_DIST_DIR` (fallback на `index.html`, заголовки как у nginx); порт из `PORT` (10000) |
+| `vippi-db` (PostgreSQL 17, free) | `ipAllowList: []` — только приватная сеть | `DATABASE_URL` из `fromDatabase.connectionString` |
+
+- **Старт контейнера** (`apps/api/docker-entrypoint.sh`): `prisma migrate deploy` → демо-сид по `DEMO_SEED_ON_START` (`if-missing` на Render) → `node dist/src/main.js`.
+- **Конфигурация:** `render.yaml` (Blueprint). `PUBLIC_APP_URL` ← `RENDER_EXTERNAL_URL`, `COOKIE_SECURE=true`, `TRUST_PROXY=3`, `SWAGGER_ENABLED=false`, `DEMO_SEED_PASSWORD` — `generateValue`, `GEMINI_API_KEY` — `sync: false` (необязательный).
+- **SLA:** догоняющий проход при старте (`onApplicationBootstrap`), затем cron каждую минуту, пока инстанс не спит.
+- **Ограничения free:** сон после 15 мин простоя; БД удаляется через 30 + 14 дней; нет бэкапов; нет Shell и pre-deploy. Подробнее — `docs/delivery/deployment.md`.
+
+**Для пилота с реальными данными** (вне демо): платная БД с ежедневными бэкапами, `GEMINI_API_KEY` в секретах платформы, юридическая проверка трансграничной передачи в Google Gemini и хостинга (H-12, TBD-6), страна хостинга — по перечню ПКМ №415. Альтернатива — VM (2 vCPU / 4 ГБ) + compose из 24.1 + Caddy/Traefik для TLS (`TRUST_PROXY` = число прокси перед API).
 
 ## 25. Переменные окружения
 
 | Переменная | Где | Пример / по умолчанию | Обязательна |
 |---|---|---|---|
 | `NODE_ENV` | api | `production` | да |
-| `API_PORT` | api | `3000` | нет |
+| `API_PORT` | api | `3000`; если пусто — `PORT` (Render) | нет |
 | `DATABASE_URL` | api | `postgresql://vippi:***@db:5432/vippi` | да |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | db | `vippi` / — / `vippi` | да |
-| `PUBLIC_APP_URL` | api | `http://localhost:8080` (Origin-проверка, ссылки приглашений) | да |
-| `COOKIE_SECURE` | api | `false` локально, `true` в проде | да |
+| `PUBLIC_APP_URL` | api | `http://localhost:8080` (Origin-проверка, ссылки приглашений); если пусто — `RENDER_EXTERNAL_URL` | да |
+| `COOKIE_SECURE` | api | по умолчанию `true` при https-origin, иначе `false` | нет |
 | `SESSION_TTL_DAYS` | api | `7` | нет |
 | `SESSION_ABSOLUTE_TTL_DAYS` | api | `30` | нет |
-| `TRUST_PROXY` | api | `true` за nginx | нет |
+| `TRUST_PROXY` | api | число прокси перед API: `true` (=1) за nginx, `3` на Render, по умолчанию `0` | нет |
+| `WEB_DIST_DIR` | api | путь к сборке SPA — API отдаёт сайт на том же origin (образ Render, ADR-022) | нет |
+| `DEMO_SEED_ON_START` | api (entrypoint) | `off` \| `if-missing` (Render) \| `reset` | нет (`off`) |
 | `LOG_LEVEL` | api | `info` | нет |
 | `SWAGGER_ENABLED` | api | `true` локально | нет |
 | `SLA_CRON_ENABLED` | api | `true` (в тестах `false`) | нет |

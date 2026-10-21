@@ -139,7 +139,7 @@
 
 ## ADR-015. Развёртывание
 - **Решение:** Docker Compose: `db` (PostgreSQL), `api` (NestJS, при старте `prisma migrate deploy`), `web` (nginx: статика + прокси `/api` → `api`). Один origin → cookie-сессии без CORS. Конфигурация только через env. Для публичного URL — тот же compose на VM с TLS-прокси или PaaS с контейнерами (TBD).
-- **Статус:** CONFIRMED (локально), хостинг — TBD.
+- **Статус:** CONFIRMED (локально); публичный демо-хостинг — ADR-022.
 
 ## ADR-016. Согласие на внешнюю AI-обработку
 - **Контекст:** текст заявки содержит ПДн клиентов; передача за рубеж требует условий ст. 27-1 ЗРУ-547 (market-research.md, 2.7).
@@ -192,6 +192,44 @@
   12. **Security overrides** в `pnpm-workspace.yaml`: `deepmerge-ts ^8` (через Prisma) и `js-yaml ^5.4.1` (через `@nestjs/swagger`). Остаётся 1 high без патча — `braces` через dev-инструмент `steiger` (линтер FSD, обрабатывает только пути исходников, в рантайм-образы не попадает); пересмотреть при выходе исправления.
   13. **Отклонение от ADR-016:** демо-организация создаётся сидом с `aiExternalProcessingEnabled = false` (ADR-016 предполагал `true`). Ключа Gemini нет, демо идёт в rule-based режиме; при появлении ключа владелец включает согласие в настройках одним переключателем.
 - **Статус:** CONFIRMED (исполнитель), требует ознакомления заказчика.
+
+## ADR-022. Публичный демо-стенд на Render (free)
+- **Контекст:** заказчик выбрал Render (бесплатный тариф) для публичного URL демо. Сессии — httpOnly cookie, сайт и API на одном origin (ADR-015, SEC-001). Ограничения free-тарифа (по [render.com/docs/free](https://render.com/docs/free), [blueprint-spec](https://render.com/docs/blueprint-spec), [deploys](https://render.com/docs/deploys), проверено 2026-10-21):
+  - web-сервис — 512 МБ / 0,1 CPU;
+  - засыпает после 15 мин без входящего трафика, просыпается ~1 мин;
+  - нет Shell/SSH, one-off jobs и `preDeployCommand` (только платные сервисы);
+  - файловая система эфемерная;
+  - бесплатная PostgreSQL удаляется через 30 дней после создания (+14 дней льготного периода), без бэкапов, 1 ГБ.
+- **Варианты:**
+  1. Static Site (web) + web-сервис (api) — два домена `*.onrender.com`. Нужны CORS с credentials и `SameSite=None`, а `onrender.com` в Public Suffix List — cookie стали бы сторонними. Ослабляет модель SPEC.
+  2. Один контейнер nginx + node (supervisor). Повторяет compose, но два процесса в 512 МБ и дополнительный слой без пользы.
+  3. **Один процесс NestJS отдаёт и API (`/api`), и собранный SPA.**
+- **Решение:** вариант 3. Корневой `Dockerfile` собирает shared → web → api; рантайм `node:24-alpine`, non-root, `tini`, `NODE_OPTIONS=--max-old-space-size=256`.
+  - **SPA:** при заданном `WEB_DIST_DIR` API отдаёт статику (`apps/api/src/web-static.ts`):
+    - `/assets/*` — `immutable`, год кэша; отсутствующий ассет — 404, а не `index.html`;
+    - остальные GET вне `/api` → `index.html` с теми же заголовками, что и nginx (CSP, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, `no-cache`);
+    - `/api/*` никогда не уходит в fallback (JSON 404).
+  - **Origin и cookie:** `PUBLIC_APP_URL` по умолчанию берётся из `RENDER_EXTERNAL_URL`, порт — из `PORT`. `COOKIE_SECURE` по умолчанию `true` при https-origin (в Blueprint задан явно). CORS не включается: один origin, `OriginGuard` без изменений.
+  - **IP клиента:** `TRUST_PROXY` — число доверенных прокси-хопов. На Render цепочка «Cloudflare → балансировщик → прокси в инстансе», поэтому `3`: `req.ip` = реальный клиент. Подставной левый элемент `X-Forwarded-For` не обходит лимит входа по IP (интеграционный тест `deployment.test.ts`). Источники: [community.render.com/t/35981](https://community.render.com/t/x-forwarded-for-header-contains-multiple-ips/35981), [arcjet-js#3899](https://github.com/arcjet/arcjet-js/issues/3899). Официальной документации Render по числу хопов нет — значение нужно проверить после первого деплоя (IP входа в журнале аудита = ваш внешний IP; процедура в `deployment.md`).
+  - **Миграции:** `prisma migrate deploy` в entrypoint контейнера перед стартом (pre-deploy на free недоступен). Ошибка миграции → контейнер не стартует → health-check не проходит → Render оставляет предыдущую версию.
+  - **Демо-сид:** без Shell и one-off jobs. Флаг `DEMO_SEED_ON_START`:
+    - `if-missing` (в Blueprint) — создать демо-организацию, если её нет; пробуждения и редеплои данные не трогают;
+    - `reset` — пересоздавать на каждом старте (временно, для переналивки);
+    - `off` — по умолчанию локально.
+
+    Сбой сида не блокирует старт API. Пароль демо-аккаунтов — `generateValue` в Blueprint. Других секретов у приложения нет: сессии — случайные токены, хэш в БД; пароль БД генерирует Render.
+  - **SLA:** cron работает, только пока инстанс не спит. При старте (`onApplicationBootstrap`) выполняется немедленный догоняющий проход. Просрочка считается от сохранённых дедлайнов (`slaBreachedAt = firstResponseDueAt`), идемпотентно (advisory lock, `dedupeKey`). После сна все пропущенные просрочки фиксируются с правильным временем, а уведомления появляются при пробуждении (тест «catch-up after a long sleep»). Таймер в UI считается от дедлайна и корректен всегда.
+  - **Прочее:**
+    - Swagger выключен;
+    - БД доступна только из приватной сети Render (`ipAllowList: []`);
+    - автодеплой только после зелёного CI (`autoDeployTrigger: checksPass`).
+- **Последствия:**
+  - Один образ на ~740 МБ: в нём Prisma CLI и движки для `migrate deploy`.
+  - Память в локальном прогоне с лимитом 512 МБ / 0,1 CPU — пик 102 МиБ (`deployment.md`).
+  - Лимиты частоты запросов — в памяти процесса, сбрасываются при перезапуске/сне (допустимо для одного инстанса).
+  - БД нужно пересоздавать раз в 30 дней — это демо-стенд, не пилот. Для реальных данных — платная БД с бэкапами и юридическая проверка (H-12, TBD-6).
+  - Compose-стек (ADR-015) не меняется: `docker-entrypoint.sh` общий, по умолчанию `DEMO_SEED_ON_START=off`.
+- **Статус:** CONFIRMED (исполнитель, 2026-10-21); число прокси-хопов — проверить на первом деплое.
 
 ## Журнал снятий cut-line
 

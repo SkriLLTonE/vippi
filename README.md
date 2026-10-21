@@ -2,7 +2,7 @@
 
 Контроль скорости ответа на заявки для агентств недвижимости Ташкента: лиды из разных каналов, SLA первого ответа с уведомлениями о просрочке, AI-сводка и черновик ответа (с честным rule-based режимом без ключа), дашборд, импорт/экспорт CSV, intake API. Интерфейс на русском и узбекском (латиница), даты — `Asia/Tashkent`, суммы — UZS.
 
-Документы: [PRD](docs/product/PRD.md) · [SPEC](docs/technical/SPEC.md) · [UX-UI](docs/design/UX-UI-spec.md) · [design-system](docs/design/design-system.md) · [решения (ADR)](docs/discovery/decisions.md) · [план и статусы](docs/delivery/implementation-plan.md) · [сценарий демо](docs/delivery/demo-script.md)
+Документы: [PRD](docs/product/PRD.md) · [SPEC](docs/technical/SPEC.md) · [UX-UI](docs/design/UX-UI-spec.md) · [design-system](docs/design/design-system.md) · [решения (ADR)](docs/discovery/decisions.md) · [план и статусы](docs/delivery/implementation-plan.md) · [сценарий демо](docs/delivery/demo-script.md) · [развёртывание](docs/delivery/deployment.md)
 
 ## Запуск в Docker (рекомендуется)
 
@@ -24,6 +24,21 @@ WEB_PORT=8081 PUBLIC_APP_URL=http://localhost:8081 docker compose up -d --build
 
 Swagger: `/api/docs` (при `SWAGGER_ENABLED=true`).
 
+## Публичное демо на Render (free)
+
+Один Docker-сервис отдаёт и сайт, и API на одном домене (cookie-сессии без CORS), база — Render PostgreSQL free ([ADR-022](docs/discovery/decisions.md)). Всё описано в [`render.yaml`](render.yaml). Чтобы развернуть:
+
+1. Войдите на <https://dashboard.render.com> через **GitHub**.
+2. **New → Blueprint** → репозиторий **SkriLLTonE/vippi** (ветка `main`).
+3. `GEMINI_API_KEY` — необязательно, можно оставить пустым (rule-based AI).
+4. **Apply**. Через ~5–10 мин сервис `vippi-leads` будет **Live**: миграции и синтетический демо-сид выполняются автоматически при первом старте.
+5. Пароль демо-аккаунтов: `vippi-leads` → **Environment** → `DEMO_SEED_PASSWORD` (сгенерирован Render).
+
+Переналивка демо-данных, включение Gemini, проверки после деплоя и ограничения free-тарифа описаны в [docs/delivery/deployment.md](docs/delivery/deployment.md):
+- сон после 15 мин простоя;
+- **база удаляется через 30 + 14 дней**;
+- SLA догоняет просрочки при пробуждении.
+
 ## Демо-доступ
 
 Сид создаёт демо-организацию «Demo Realty Toshkent (DEMO)» (помечена `isDemo`, в интерфейсе — баннер «Демо-данные: все заявки и люди вымышлены») с ~180 **синтетическими** лидами за 30 дней. Все имена, телефоны (`+99800…`) и тексты вымышлены.
@@ -34,7 +49,7 @@ Swagger: `/api/docs` (при `SWAGGER_ENABLED=true`).
 | Руководитель продаж | `head@demo-realty.example`                                      |
 | Менеджеры           | `manager1@demo-realty.example` … `manager3@demo-realty.example` |
 
-Пароль — значение `DEMO_SEED_PASSWORD` из вашего `.env` (в `.env.example` — `demo-password-2026`; смените для любого не-локального запуска). Повторный запуск сида пересоздаёт демо-организацию.
+Пароль — значение `DEMO_SEED_PASSWORD` из вашего `.env` (в `.env.example` — `demo-password-2026`; смените для любого не-локального запуска; на Render генерируется автоматически). Повторный запуск сида пересоздаёт демо-организацию; `--if-missing` — создаёт только если её нет.
 
 ## Разработка без Docker-образов приложения
 
@@ -59,9 +74,10 @@ pnpm dev                           # API :3000, web :5173 (прокси /api →
 ```bash
 pnpm lint               # ESLint + steiger (границы FSD)
 pnpm typecheck
-pnpm test               # unit: shared (152), api (97), web — Vitest + React Testing Library (49)
-pnpm test:integration   # API на реальной БД из DATABASE_URL_TEST (имя должно содержать "test"), 71 тест:
-                        # изоляция тенантов по всем маршрутам с :id × 3 роли, матрица прав, SLA-планировщик, AI с мок-провайдером
+pnpm test               # unit: shared (152), api (113), web — Vitest + React Testing Library (49)
+pnpm test:integration   # API на реальной БД из DATABASE_URL_TEST (имя должно содержать "test"), 78 тестов:
+                        # изоляция тенантов по всем маршрутам с :id × 3 роли, матрица прав, SLA-планировщик (в т.ч. догон после сна),
+                        # AI с мок-провайдером, режим единого образа (SPA, заголовки, IP за прокси)
 pnpm i18n:check         # паритет ключей ru/uz и использование ключей в коде
 pnpm build
 pnpm test:e2e           # Playwright: основной сценарий (≈2 мин, ждёт реальную SLA-просрочку)
@@ -84,6 +100,6 @@ E2E сам поднимает API (`:3000`) и `vite preview` (`:4173`); API д�
 - Уведомления — внутри приложения (опрос раз в 30 с), без push/email/Telegram.
 - Ключа Gemini в проекте нет; реальный провайдер проверен только на мок-тестах.
 - Узбекские строки — без вычитки носителем языка.
-- Только локальный запуск; HTTPS, бэкапы и хостинг не настроены (`COOKIE_SECURE=false` для localhost).
+- Публичный стенд — только Render free (демо): засыпает, БД без бэкапов и удаляется через 30 + 14 дней, лимиты запросов в памяти. Для пилота с реальными данными нужны платная БД с бэкапами и юридическая проверка хостинга. Локально HTTPS нет (`COOKIE_SECURE=false` для localhost).
 - Покрытие тестами неполное (нет RTL-тестов компонентов, нагрузочного замера, Lighthouse, axe) — подробности в разделе 7 [плана](docs/delivery/implementation-plan.md).
 - `pnpm audit`: 1 high без доступного исправления (`braces` в dev-инструменте steiger, в рантайм-образы не попадает) — см. ADR-021.
