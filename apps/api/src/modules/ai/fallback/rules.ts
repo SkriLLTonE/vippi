@@ -30,9 +30,11 @@ export function detectLanguage(text: string): LeadAnalysis['language'] {
   const lower = prep(text);
   const uzCyr = /[ўқғҳ]/.test(lower);
   const uzLatin = /(o'|g'|\bxonali\b|\bkerak\b|\bnarxi\b|\bqancha\b|\buy\b|\bkvartira\b)/.test(lower);
-  const ru = cyr / letters.length > 0.6 && !uzCyr;
+  const cyrShare = cyr / letters.length;
+  const ru = cyrShare > 0.6 && !uzCyr;
   const uz = uzLatin || uzCyr;
   if (ru && uz) return 'mixed';
+  if (uzLatin && !uzCyr && cyrShare >= 0.25) return 'mixed';
   if (ru) return 'ru';
   if (uz) return 'uz';
   return 'unknown';
@@ -41,7 +43,11 @@ export function detectLanguage(text: string): LeadAnalysis['language'] {
 export function extractBudget(text: string): LeadAnalysis['budget'] {
   const t = prep(text);
   const patterns: Array<{ re: RegExp; currency: 'USD' | 'UZS'; mult: (m: RegExpExecArray) => number }> = [
-    { re: new RegExp(String.raw`\$\s*${NUM}\s*(${THOUSAND})?`, 'u'), currency: 'USD', mult: (m) => (m[2] ? 1000 : 1) },
+    {
+      re: new RegExp(String.raw`\$\s*${NUM}\s*(${THOUSAND})?`, 'u'),
+      currency: 'USD',
+      mult: (m) => (m[2] ? 1000 : 1),
+    },
     {
       re: new RegExp(String.raw`${NUM}\s*(${THOUSAND})?\s*${USD}`, 'u'),
       currency: 'USD',
@@ -95,7 +101,8 @@ export function extractRooms(text: string): number | null {
 export function extractPropertyType(text: string): PropertyType | null {
   const t = prep(text);
   if (/квартир|kvartira|xonali|студи/.test(t)) return 'APARTMENT';
-  if (/\bдом\b|\bдома\b|hovli|uy-joy|коттедж/.test(t)) return 'HOUSE';
+  // `\b` is ASCII-only in JS regexes, so Cyrillic words need Unicode letter lookarounds.
+  if (/(?<!\p{L})дома?(?!\p{L})|hovli|uy-joy|коттедж/u.test(t)) return 'HOUSE';
   if (/офис|помещени|ofis|do'kon|магазин/.test(t)) return 'COMMERCIAL';
   if (/участ|\byer\b|соток|sotix/.test(t)) return 'LAND';
   return null;
@@ -125,8 +132,20 @@ const SOURCE_LABEL: Record<Locale, Record<LeadSource, string>> = {
 };
 
 const PROPERTY_LABEL: Record<Locale, Record<PropertyType, string>> = {
-  ru: { APARTMENT: 'квартира', HOUSE: 'дом', COMMERCIAL: 'коммерческая недвижимость', LAND: 'участок', OTHER: 'другое' },
-  uz: { APARTMENT: 'kvartira', HOUSE: 'hovli/uy', COMMERCIAL: 'tijorat binosi', LAND: 'yer uchastkasi', OTHER: 'boshqa' },
+  ru: {
+    APARTMENT: 'квартира',
+    HOUSE: 'дом',
+    COMMERCIAL: 'коммерческая недвижимость',
+    LAND: 'участок',
+    OTHER: 'другое',
+  },
+  uz: {
+    APARTMENT: 'kvartira',
+    HOUSE: 'hovli/uy',
+    COMMERCIAL: 'tijorat binosi',
+    LAND: 'yer uchastkasi',
+    OTHER: 'boshqa',
+  },
 };
 
 const T = {
@@ -206,7 +225,8 @@ export function ruleBasedAnalysis(input: RuleInput, locale: Locale): LeadAnalysi
   if (propertyType) found.push(PROPERTY_LABEL[locale][propertyType]);
   if (rooms) found.push(t.rooms(rooms));
   if (district) found.push(districtName(district, locale));
-  if (budget) found.push(`${budget.amount.toLocaleString('ru-RU').replace(/\u00a0/g, ' ')} ${budget.currency}`);
+  if (budget)
+    found.push(`${budget.amount.toLocaleString('ru-RU').replace(/\u00a0/g, ' ')} ${budget.currency}`);
   const head = `${SOURCE_LABEL[locale][input.source]}: ${text.trim().slice(0, 200) || '—'}`;
   const summary = (found.length ? `${head}. ${t.found}: ${found.join(', ')}` : head).slice(0, 400);
 
@@ -239,9 +259,11 @@ export function scoreLead(
   if (fields.district) hits.push({ w: 10, reason: r.district });
   if (fields.propertyType || fields.rooms) hits.push({ w: 10, reason: r.details });
   if (input.message.trim().length > 40) hits.push({ w: 10, reason: r.long });
-  if (['WEBSITE', 'PHONE', 'WALK_IN', 'REFERRAL'].includes(input.source)) hits.push({ w: 10, reason: r.strongSource });
+  if (['WEBSITE', 'PHONE', 'WALK_IN', 'REFERRAL'].includes(input.source))
+    hits.push({ w: 10, reason: r.strongSource });
   else if (['INSTAGRAM', 'TELEGRAM', 'OLX'].includes(input.source)) hits.push({ w: 5, reason: r.source });
-  if (/срочно|сегодня|на этой неделе|\btez\b|bugun|shoshilinch/.test(text)) hits.push({ w: 10, reason: r.urgent });
+  if (/срочно|сегодня|на этой неделе|\btez\b|bugun|shoshilinch/.test(text))
+    hits.push({ w: 10, reason: r.urgent });
   if (/просто интерес|shunchaki|потом/.test(text)) hits.push({ w: -15, reason: r.vague });
 
   const score = Math.max(0, Math.min(100, 20 + hits.reduce((s, h) => s + h.w, 0)));
