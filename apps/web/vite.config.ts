@@ -21,8 +21,8 @@ export default defineConfig(() => ({
       output: {
         advancedChunks: {
           groups: [
+            // No manual group for recharts: it pulled shared deps (clsx) in recursively and made every page preload it.
             { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler|react-router)[\\/]/ },
-            { name: 'charts', test: /node_modules[\\/](recharts|d3-|victory-vendor)/ },
           ],
         },
       },
