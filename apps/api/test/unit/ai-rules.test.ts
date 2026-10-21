@@ -154,7 +154,7 @@ describe('ruleBasedAnalysis (AI-001, AI-002 fallback)', () => {
   });
 
   it('long message is truncated and processed quickly (no catastrophic backtracking)', () => {
-    const long = `${'Нужна квартира в Юнусабаде. '.repeat(300)}${'9'.repeat(5000)} ${'1 '.repeat(5000)}`;
+    const long = `${'Нужна квартира в Юнусабаде. '.repeat(300)}${'9'.repeat(50_000)} ${'1 '.repeat(20_000)}`;
     const started = performance.now();
     const a = analyze(long);
     expect(performance.now() - started).toBeLessThan(500);

@@ -9,7 +9,8 @@ import {
   type PropertyType,
 } from '@vippi/shared';
 
-const NUM = String.raw`(\d{1,3}(?:[ \u00a0]\d{3})+|\d+(?:[.,]\d+)?)`;
+// The lookbehind and bounded quantifiers keep matching linear on long digit runs (no restart mid-number).
+const NUM = String.raw`(?<!\d)(\d{1,3}(?:[ \u00a0]\d{3}){1,5}|\d{1,15}(?:[.,]\d{1,6})?)`;
 const THOUSAND = String.raw`(?:k|к|тыс\.?|тысяч\p{L}*|ming)`;
 const MILLION = String.raw`(?:млн\.?|mln\.?|million|миллион\p{L}*)`;
 const USD = String.raw`(?:\$|у\.?\s?е\.?|usd|dollar\p{L}*|доллар\p{L}*)`;
