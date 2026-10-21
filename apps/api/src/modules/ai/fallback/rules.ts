@@ -13,6 +13,7 @@ import {
 const NUM = String.raw`(?<!\d)(\d{1,3}(?:[ \u00a0]\d{3}){1,5}|\d{1,15}(?:[.,]\d{1,6})?)`;
 const THOUSAND = String.raw`(?:k|к|тыс\.?|тысяч\p{L}*|ming)`;
 const MILLION = String.raw`(?:млн\.?|mln\.?|million|миллион\p{L}*)`;
+const BILLION = String.raw`(?:млрд\.?|mlrd\.?|milliard\p{L}*|миллиард\p{L}*|billion)`;
 const USD = String.raw`(?:\$|у\.?\s?е\.?|usd|dollar\p{L}*|доллар\p{L}*)`;
 const UZS = String.raw`(?:сум\p{L}*|so'm|som\b|sum\b|uzs)`;
 
@@ -54,6 +55,7 @@ export function extractBudget(text: string): LeadAnalysis['budget'] {
       currency: 'USD',
       mult: (m) => (m[2] ? 1000 : 1),
     },
+    { re: new RegExp(String.raw`${NUM}\s*${BILLION}`, 'u'), currency: 'UZS', mult: () => 1_000_000_000 },
     { re: new RegExp(String.raw`${NUM}\s*${MILLION}`, 'u'), currency: 'UZS', mult: () => 1_000_000 },
     {
       re: new RegExp(String.raw`${NUM}\s*(${THOUSAND})?\s*${UZS}`, 'u'),
@@ -75,7 +77,7 @@ export function extractBudget(text: string): LeadAnalysis['budget'] {
 export function budgetAppearsInText(amount: number, text: string): boolean {
   const numbers = [...prep(text).matchAll(new RegExp(NUM, 'gu'))].map((m) => toNumber(m[1] ?? ''));
   return numbers.some((n) =>
-    [1, 1000, 1_000_000].some((mult) => Math.abs(n * mult - amount) < 1e-6 * Math.max(1, amount)),
+    [1, 1000, 1_000_000, 1_000_000_000].some((mult) => Math.abs(n * mult - amount) < 1e-6 * Math.max(1, amount)),
   );
 }
 

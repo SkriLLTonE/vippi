@@ -9,6 +9,7 @@ import {
   ruleBasedAnalysis,
 } from '../../src/modules/ai/fallback/rules.js';
 import { templateReply } from '../../src/modules/ai/fallback/templates.js';
+import { uzCyrillicToLatin } from '../../src/modules/ai/fallback/translit.js';
 import { checkLeadAnalysis, checkReplyDraft } from '../../src/modules/ai/post-validation/checks.js';
 
 describe('detectLanguage (AI-001)', () => {
@@ -43,6 +44,9 @@ describe('extractBudget (AI-001)', () => {
     ['1.5 mln soʻm', { amount: 1_500_000, currency: 'UZS' }],
     ["500 ming so'm", { amount: 500_000, currency: 'UZS' }],
     ['1 200 000 000 сум', { amount: 1_200_000_000, currency: 'UZS' }],
+    ['бюджет около 1,2 млрд сум', { amount: 1_200_000_000, currency: 'UZS' }],
+    ['2 mlrd so‘mgacha', { amount: 2_000_000_000, currency: 'UZS' }],
+    ['1.5 milliard', { amount: 1_500_000_000, currency: 'UZS' }],
     ['около 70 тысяч', null],
     ['kvartira kerak', null],
     ['0$', null],
@@ -200,6 +204,24 @@ describe('ruleBasedAnalysis (AI-001, AI-002 fallback)', () => {
   });
 });
 
+describe('uzCyrillicToLatin', () => {
+  it.each([
+    ['Шерзод', 'Sherzod'],
+    ['Ғайрат Қодиров', 'Gʻayrat Qodirov'],
+    ['Ўктам', 'Oʻktam'],
+    ['Ҳилола Юсупова', 'Hilola Yusupova'],
+    ['Елена', 'Yelena'],
+    ['Алексеев', 'Alekseyev'],
+    ['Сергей', 'Sergey'],
+    ['Чилонзор', 'Chilonzor'],
+    ['ШАХЗОД', 'SHAXZOD'],
+    ['Aziz Karimov', 'Aziz Karimov'],
+    ['Demo Realty (DEMO)', 'Demo Realty (DEMO)'],
+  ])('%s → %s', (cyr, lat) => {
+    expect(uzCyrillicToLatin(cyr)).toBe(lat);
+  });
+});
+
 describe('templateReply (AI-003 fallback)', () => {
   const analysis = ruleBasedAnalysis(
     { source: 'TELEGRAM', message: '2 xonali kvartira kerak', name: 'Aziz', hasPhone: true },
@@ -231,6 +253,18 @@ describe('templateReply (AI-003 fallback)', () => {
       'FORMAL',
     );
     expect(d.text.startsWith('Здравствуйте!')).toBe(true);
+  });
+
+  it('uz draft transliterates Cyrillic client, manager and company names so it passes the Latin-only check', () => {
+    const d = templateReply(
+      { name: 'Тестова Нилуфар', companyName: 'Ташкент Уй', managerName: 'Шерзод', analysis },
+      'uz',
+      'FORMAL',
+    );
+    expect(d.text).toContain('Testova Nilufar');
+    expect(d.text).toContain('Tashkent Uy');
+    expect(d.text).toContain('Sherzod');
+    expect(checkReplyDraft(d, 'uz')).toBe(true);
   });
 
   it('post-check rejects a uz draft with Cyrillic, links, or a language mismatch', () => {

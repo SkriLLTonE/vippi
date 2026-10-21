@@ -32,12 +32,15 @@ import { SlaPolicyService } from '../sla/sla-policy.service.js';
 import { AiUsageService } from './ai-usage.service.js';
 import { ruleBasedAnalysis } from './fallback/rules.js';
 import { templateReply, templateWeeklySummary, type WeeklyAggregates } from './fallback/templates.js';
+import { uzCyrillicToLatin } from './fallback/translit.js';
 import { checkLeadAnalysis, checkReplyDraft, checkWeeklySummary } from './post-validation/checks.js';
 import { leadAnalysisPrompt, promptVersion, replyDraftPrompt, weeklySummaryPrompt } from './prompts/prompts.js';
 import { AI_PROVIDER, AiProviderError, type AiProvider } from './providers/ai-provider.interface.js';
 
 const MAX_PROMPT_CHARS = 12_000;
 const RETRY_PAUSE_MS = 500;
+/** Output caps include headroom for thinking tokens, which Gemini counts against maxOutputTokens. */
+const THINKING_HEADROOM_TOKENS = 1024;
 
 interface RunSpec<T> {
   actor: Actor;
@@ -58,8 +61,12 @@ interface RunSpec<T> {
   force?: boolean;
 }
 
-class OutputInvalid extends Error {}
-class TimeoutError extends Error {}
+class OutputInvalid extends Error {
+  override name = 'OutputInvalid';
+}
+class TimeoutError extends Error {
+  override name = 'TimeoutError';
+}
 
 @Injectable()
 export class AiService {
@@ -134,9 +141,14 @@ export class AiService {
         tokens = r.usage;
       } catch (e) {
         reason = e instanceof OutputInvalid ? 'INVALID_OUTPUT' : e instanceof TimeoutError ? 'TIMEOUT' : 'PROVIDER_ERROR';
-        if (e instanceof AiProviderError && e.status !== null) {
-          this.logger.warn({ msg: 'ai provider error', kind: spec.kind, httpStatus: e.status });
-        }
+        // Messages are built by the adapter (status / finish reason) and never contain request or response text.
+        this.logger.warn({
+          msg: 'ai provider call failed',
+          kind: spec.kind,
+          reason,
+          httpStatus: e instanceof AiProviderError ? e.status : null,
+          error: e instanceof AiProviderError ? e.message : e instanceof Error ? e.name : 'unknown',
+        });
       }
     }
 
@@ -254,7 +266,7 @@ export class AiService {
       system: leadAnalysisPrompt.system(locale),
       user: leadAnalysisPrompt.user(promptInput),
       inputChars: message.length,
-      maxOutputTokens: 800,
+      maxOutputTokens: 800 + THINKING_HEADROOM_TOKENS,
       temperature: 0.2,
       postCheck: (out) => checkLeadAnalysis(out, message),
       fallback: () =>
@@ -288,10 +300,12 @@ export class AiService {
     const a = analysis?.success ? analysis.data : null;
     const message = lead.message ?? '';
     const managerFirstName = actor.fullName.split(/\s+/)[0] ?? actor.fullName;
+    // Uzbek replies are Latin-only (post-check), so names reach the model already transliterated.
+    const asReplyScript = (s: string) => (req.language === 'uz' ? uzCyrillicToLatin(s) : s);
     const promptInput = {
-      lead: { source: lead.source, message, name: lead.fullName },
-      companyName: org.name,
-      managerFirstName,
+      lead: { source: lead.source, message, name: lead.fullName ? asReplyScript(lead.fullName) : lead.fullName },
+      companyName: asReplyScript(org.name),
+      managerFirstName: asReplyScript(managerFirstName),
       language: req.language,
       tone: req.tone,
       analysis: a
@@ -316,7 +330,7 @@ export class AiService {
       system: replyDraftPrompt.system(req.language),
       user: replyDraftPrompt.user(promptInput),
       inputChars: message.length,
-      maxOutputTokens: 600,
+      maxOutputTokens: 600 + THINKING_HEADROOM_TOKENS,
       temperature: 0.5,
       postCheck: (out) => checkReplyDraft(out, req.language),
       fallback: () =>
@@ -424,7 +438,7 @@ export class AiService {
       system: weeklySummaryPrompt.system(locale),
       user: weeklySummaryPrompt.user(aggregates),
       inputChars: 0,
-      maxOutputTokens: 600,
+      maxOutputTokens: 600 + THINKING_HEADROOM_TOKENS,
       temperature: 0.2,
       postCheck: (out) => checkWeeklySummary(out, aggregates),
       fallback: () => templateWeeklySummary(aggregates, locale),

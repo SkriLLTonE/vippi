@@ -1,4 +1,5 @@
 import { districtName, type LeadAnalysis, type Locale, type ReplyDraft, type ReplyTone, type WeeklySummary } from '@vippi/shared';
+import { uzCyrillicToLatin } from './translit.js';
 
 const PROPERTY: Record<Locale, Record<string, string>> = {
   ru: { APARTMENT: 'квартиру', HOUSE: 'дом', COMMERCIAL: 'коммерческое помещение', LAND: 'участок', OTHER: 'объект' },
@@ -62,11 +63,14 @@ export function templateReply(input: ReplyTemplateInput, language: Locale, tone:
     const ask = qs.length ? ` Чтобы подобрать варианты, подскажите, пожалуйста: ${qs.join(' И ')}` : ' Когда вам удобно обсудить варианты?';
     text = `${hello} ${intro}${phrase ? ` ${phrase}` : ''}${ask}`;
   } else {
-    const hello = `Assalomu alaykum${input.name ? `, ${input.name}` : ''}!`;
+    const name = input.name ? uzCyrillicToLatin(input.name) : null;
+    const company = uzCyrillicToLatin(input.companyName);
+    const manager = uzCyrillicToLatin(input.managerName);
+    const hello = `Assalomu alaykum${name ? `, ${name}` : ''}!`;
     const intro =
       tone === 'FORMAL'
-        ? `Men ${input.companyName} kompaniyasidan ${input.managerName}. Murojaatingiz uchun rahmat.`
-        : `Men ${input.managerName}, ${input.companyName} jamoasidanman. Yozganingiz uchun katta rahmat!`;
+        ? `Men ${company} kompaniyasidan ${manager}. Murojaatingiz uchun rahmat.`
+        : `Men ${manager}, ${company} jamoasidanman. Yozganingiz uchun katta rahmat!`;
     const ask = qs.length ? ` Iltimos, aniqlashtirib bering: ${qs.join(' Va ')}` : ' Variantlarni qachon muhokama qilishimiz qulay?';
     text = `${hello} ${intro}${phrase ? ` ${phrase}` : ''}${ask}`;
   }
