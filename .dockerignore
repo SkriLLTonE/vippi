@@ -6,7 +6,9 @@
 **/.vite
 .git
 .env
+**/.env
 .env.*
+**/.env.*
 !.env.example
 docs
 *.log

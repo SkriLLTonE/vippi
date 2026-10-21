@@ -1,0 +1,55 @@
+# Render Blueprint (https://render.com/docs/blueprint-spec) — public demo on free instances, ADR-022.
+# One Docker web service serves the SPA and the API on the same origin; Render Postgres is reachable
+# over the private network only. Deploy: Dashboard → New → Blueprint → this repo (docs/delivery/deployment.md).
+services:
+  - type: web
+    name: vippi-leads
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health/ready
+    # Deploy only commits whose GitHub checks (CI) passed.
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vippi-db
+          property: connectionString
+      - key: NODE_ENV
+        value: production
+      # PUBLIC_APP_URL defaults to RENDER_EXTERNAL_URL (https://<service>.onrender.com).
+      # Set it explicitly only when a custom domain is added.
+      - key: COOKIE_SECURE
+        value: 'true'
+      # Cloudflare → Render load balancer → in-instance proxy: the client IP is 3 hops away.
+      - key: TRUST_PROXY
+        value: '3'
+      - key: SWAGGER_ENABLED
+        value: 'false'
+      - key: LOG_LEVEL
+        value: info
+      - key: SLA_CRON_ENABLED
+        value: 'true'
+      # Synthetic demo org: created on first start, kept on later starts (reset = recreate on every start).
+      - key: DEMO_SEED_ON_START
+        value: if-missing
+      # Password of all demo accounts: random, generated once; read it in Dashboard → Environment.
+      - key: DEMO_SEED_PASSWORD
+        generateValue: true
+      # Gemini is used only with a key AND the organization's consent switch; empty key → rule-based mode.
+      - key: AI_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+
+databases:
+  - name: vippi-db
+    plan: free
+    region: frankfurt
+    databaseName: vippi
+    user: vippi
+    postgresMajorVersion: '17'
+    # Private network only: no connections from the public internet.
+    ipAllowList: []

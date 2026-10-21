@@ -1,7 +1,7 @@
 /**
  * FR-095 demo seed: synthetic organization "Demo Realty Toshkent (DEMO)".
  * All people, phones (+99800… — non-existent operator range) and requests are fictional.
- * Re-running recreates only the demo organization and its demo users.
+ * Re-running recreates only the demo organization and its demo users; `--if-missing` seeds only when it is absent.
  */
 import { randomUUID } from 'node:crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
@@ -125,6 +125,14 @@ async function main(): Promise<void> {
   }
   const prisma = new PrismaClient();
   try {
+    // `--if-missing` (used on container start, ADR-022): keep an existing demo org so wake-ups don't reset it.
+    if (process.argv.includes('--if-missing')) {
+      const existing = await prisma.organization.findFirst({ where: { isDemo: true, name: DEMO_ORG_NAME }, select: { id: true } });
+      if (existing) {
+        console.log(`Demo organization "${DEMO_ORG_NAME}" already exists — skipped (run without --if-missing to recreate).`);
+        return;
+      }
+    }
     const hash = await argon2.hash(password, { type: argon2.argon2id, memoryCost: 19_456, timeCost: 2, parallelism: 1 });
     const now = new Date();
     const users = [
