@@ -50,7 +50,7 @@ export function LeadDetailsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <Link to="/leads" className="inline-flex items-center gap-1 self-start text-sm text-muted-foreground hover:text-foreground">
+      <Link to="/leads" className="inline-flex min-h-7 items-center gap-1 self-start text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-4" aria-hidden />
         {t('nav.leads')}
       </Link>

@@ -52,7 +52,12 @@ function KpiCard({
         <span className="text-sm text-muted-foreground">{label}</span>
         <span className="flex items-center gap-1">
           <Tooltip content={hint}>
-            <button type="button" className="text-subtle-foreground hover:text-foreground" aria-label={hint} onClick={(e) => e.preventDefault()}>
+            <button
+              type="button"
+              className="-m-1.5 inline-flex size-7 items-center justify-center rounded-md text-subtle-foreground hover:text-foreground"
+              aria-label={hint}
+              onClick={(e) => e.preventDefault()}
+            >
               <Info className="size-4" aria-hidden />
             </button>
           </Tooltip>
@@ -231,7 +236,7 @@ export function DashboardPage() {
         />
       </section>
 
-      <div className="mt-8 grid gap-6 xl:grid-cols-2">
+      <div className="mt-8 grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>{t('dashboard.byManager')}</CardTitle>

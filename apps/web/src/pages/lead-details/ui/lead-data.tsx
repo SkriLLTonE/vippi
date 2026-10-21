@@ -29,7 +29,7 @@ export function LeadData({ lead }: { lead: LeadDto }) {
           <Row label={t('lead.field.phone')}>
             {lead.phone ? (
               <span className="flex flex-wrap items-center gap-2">
-                <a href={`tel:${lead.phone}`} className="inline-flex items-center gap-1 font-medium text-primary hover:underline tabular">
+                <a href={`tel:${lead.phone}`} className="inline-flex min-h-7 items-center gap-1 font-medium text-primary hover:underline tabular">
                   <Phone className="size-4" aria-hidden />
                   {formatPhone(lead.phone)}
                 </a>

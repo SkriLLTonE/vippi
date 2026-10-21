@@ -1,6 +1,6 @@
 import { X } from 'lucide-react';
 import { Dialog as D } from 'radix-ui';
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../lib';
 
@@ -22,11 +22,23 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
   const guard = (e: Event) => {
     if (locked) e.preventDefault();
   };
+  // Dialogs are opened from state, not D.Trigger, so Radix has no trigger to return focus to.
+  const opener = useRef<HTMLElement | null>(null);
   return (
     <D.Root open={open} onOpenChange={(v) => (locked && !v ? undefined : onOpenChange(v))}>
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-[60] bg-foreground/40" />
         <D.Content
+          onOpenAutoFocus={() => {
+            opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          }}
+          onCloseAutoFocus={(e) => {
+            if (opener.current?.isConnected) {
+              e.preventDefault();
+              opener.current.focus();
+            }
+            opener.current = null;
+          }}
           onEscapeKeyDown={guard}
           onPointerDownOutside={guard}
           onInteractOutside={guard}

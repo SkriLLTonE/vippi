@@ -46,7 +46,7 @@ export function SortableTh({
       className={className}
       aria-sort={direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'}
     >
-      <button type="button" onClick={onToggle} className="inline-flex items-center gap-1 hover:text-foreground">
+      <button type="button" onClick={onToggle} className="inline-flex min-h-7 items-center gap-1 hover:text-foreground">
         {label}
         {direction === 'asc' ? <ArrowUp className="size-3.5" aria-hidden /> : null}
         {direction === 'desc' ? <ArrowDown className="size-3.5" aria-hidden /> : null}

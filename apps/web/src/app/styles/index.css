@@ -60,7 +60,8 @@
     color: var(--foreground);
     background: var(--background);
     font-family: var(--font-sans);
-    font-size: 14px;
+    /* 14px at the browser default, but still scales with the user's font-size preference. */
+    font-size: 87.5%;
     -webkit-font-smoothing: antialiased;
   }
   body {
