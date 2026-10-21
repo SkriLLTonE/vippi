@@ -1,0 +1,12 @@
+---
+description: Use project skills from .cursor/skills
+alwaysApply: true
+---
+
+Before non-trivial technical work:
+
+1. Route via `.cursor/skills/using-agent-skills/SKILL.md`.
+2. Read and follow the matching skill under `.cursor/skills/<name>/SKILL.md`.
+3. Open linked checklists in `.cursor/references/` when the skill points to them.
+4. For library/framework APIs, fetch current docs with the `find-docs` skill (Context7) instead of relying on memory.
+5. Strix pentest skills run only against this project's own local/staging environments.
