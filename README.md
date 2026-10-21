@@ -16,11 +16,13 @@ docker compose exec api node dist/prisma/seed/demo.js   # синтетическ
 
 Откройте <http://localhost:8080>. Проверка: `curl http://localhost:8080/api/health/ready` → `200`.
 
-**Если порт 8080 занят**, задайте другой порт и тот же origin для API (иначе защита по Origin отклонит запросы):
+**Если порт 8080 занят**, задайте другой порт — origin для API (`PUBLIC_APP_URL` контейнера) возьмётся из него же:
 
 ```bash
-WEB_PORT=8081 PUBLIC_APP_URL=http://localhost:8081 docker compose up -d --build
+WEB_PORT=8081 docker compose up -d --build
 ```
+
+За доменом или прокси: `STACK_PUBLIC_URL=https://ваш-домен docker compose up -d`. `PUBLIC_APP_URL` из `.env` в Docker-стеке не используется (он для `pnpm dev`). Если origin не совпадает, вход и любые изменения отклоняются с `403 ORIGIN_MISMATCH`, а в логе API появляется `origin mismatch` с полученным и ожидаемым origin.
 
 Swagger: `/api/docs` (при `SWAGGER_ENABLED=true`).
 

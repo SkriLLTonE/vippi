@@ -1,4 +1,4 @@
-import { type CanActivate, type ExecutionContext, Inject, Injectable } from '@nestjs/common';
+import { type CanActivate, type ExecutionContext, Inject, Injectable, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { hasPermission, type FeatureFlag, type Permission } from '@vippi/shared';
@@ -19,6 +19,8 @@ const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 /** SEC-005: Origin (or Referer) of state-changing requests must match PUBLIC_APP_URL. */
 @Injectable()
 export class OriginGuard implements CanActivate {
+  private readonly logger = new Logger('OriginGuard');
+
   constructor(
     private readonly reflector: Reflector,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
@@ -30,6 +32,8 @@ export class OriginGuard implements CanActivate {
     if (accessOf(this.reflector, ctx) === 'apiKey') return true;
     const origin = req.headers.origin ?? refererOrigin(req.headers.referer);
     if (origin !== this.config.publicOrigin) {
+      // A wrong PUBLIC_APP_URL (e.g. another port) rejects every login; make it visible to operators.
+      this.logger.warn({ msg: 'origin mismatch', origin: origin ?? null, expected: this.config.publicOrigin });
       throw new AppException(403, 'ORIGIN_MISMATCH', 'Origin is not allowed');
     }
     return true;

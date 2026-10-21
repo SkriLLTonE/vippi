@@ -33,6 +33,12 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm i18n:check
       - run: pnpm build
+      - name: docker compose origin follows WEB_PORT (OriginGuard)
+        run: |
+          cp .env.example .env
+          WEB_PORT=8081 docker compose config | grep -F 'PUBLIC_APP_URL: http://localhost:8081'
+          docker compose config | grep -F 'PUBLIC_APP_URL: http://localhost:8080'
+          STACK_PUBLIC_URL=https://leads.example docker compose config | grep -F 'PUBLIC_APP_URL: https://leads.example'
 
   unit:
     name: Unit tests (TZ=${{ matrix.tz }})

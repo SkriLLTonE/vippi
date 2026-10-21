@@ -14,7 +14,7 @@
 3. Открыть два окна браузера (второе — инкогнито): **окно A** — владелец `owner@demo-realty.example`, **окно B** — менеджер `manager1@demo-realty.example`. Пароль — `DEMO_SEED_PASSWORD` из `.env`.
 4. Подготовить CSV для импорта (UTF-8, заголовки `name,phone,source,message`, 2–3 строки с вымышленными данными) — проще всего «Скачать шаблон» в диалоге импорта и заполнить его.
 
-> Если порт 8080 занят: `WEB_PORT=8081 PUBLIC_APP_URL=http://localhost:8081 docker compose up -d --build` и везде использовать `:8081`.
+> Если порт 8080 занят: `WEB_PORT=8081 docker compose up -d --build` и везде использовать `:8081`.
 
 ## Ход показа
 

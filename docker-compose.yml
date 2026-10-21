@@ -28,7 +28,9 @@ services:
     environment:
       NODE_ENV: production
       # Must equal the browser origin of the web container (Origin check, invitation links).
-      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:8080}
+      # Follows WEB_PORT; .env PUBLIC_APP_URL is for `pnpm dev` and is deliberately not used here.
+      # Behind a domain or proxy: STACK_PUBLIC_URL=https://leads.example docker compose up -d
+      PUBLIC_APP_URL: ${STACK_PUBLIC_URL:-http://localhost:${WEB_PORT:-8080}}
       DATABASE_URL: postgresql://${POSTGRES_USER:-vippi}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-vippi}
       TRUST_PROXY: 'true'
       API_PORT: '3000'
