@@ -16,6 +16,7 @@
     "typecheck": "pnpm build:shared && pnpm -r run typecheck",
     "test": "pnpm build:shared && pnpm -r run test",
     "test:integration": "pnpm --filter @vippi/api run test:integration",
+    "test:ai:live": "pnpm --filter @vippi/api run test:ai:live",
     "test:e2e": "pnpm --filter @vippi/web run test:e2e",
     "i18n:check": "pnpm --filter @vippi/web run i18n:check",
     "format": "prettier --write .",

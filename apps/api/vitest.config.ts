@@ -22,6 +22,17 @@ export default defineConfig({
           hookTimeout: 60_000,
         },
       },
+      {
+        extends: true,
+        test: {
+          name: 'live',
+          include: ['test/live/**/*.test.ts'],
+          setupFiles: ['test/live/setup.ts'],
+          fileParallelism: false,
+          testTimeout: 600_000,
+          hookTimeout: 60_000,
+        },
+      },
     ],
   },
 });

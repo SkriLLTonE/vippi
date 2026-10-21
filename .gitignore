@@ -24,3 +24,6 @@ test-results/
 # OS
 .DS_Store
 Thumbs.db
+
+# Live AI evaluation raw outputs (synthetic, local only)
+apps/api/test/live/results/
