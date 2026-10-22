@@ -431,6 +431,8 @@ sequenceDiagram
 | name | varchar(50) | NOT NULL |
 | prefix | varchar(16) | первые 12 символов ключа (`vpk_` + 8), для отображения |
 | keyHash | char(64) | UNIQUE (SHA-256; ключ высокоэнтропийный — argon2 не нужен) |
+| keyCiphertext | text | NULL; полный ключ, AES-256-GCM (`API_KEY_ENCRYPTION_KEY`, AAD = organizationId), формат `v1.<iv>.<tag>.<data>`. NULL — ключ создан до шифрования (скопировать нельзя, только ротация) |
+| keyLast3 | varchar(3) | NULL; последние 3 символа для маски `vpk_••••…abc` |
 | createdById | uuid | FK → User |
 | lastUsedAt | timestamptz | NULL, обновляется не чаще раза в минуту |
 | revokedAt | timestamptz | NULL |
@@ -569,7 +571,7 @@ sequenceDiagram
 | actorType | AuditActorType | NOT NULL |
 | actorUserId | uuid | FK → User, NULL |
 | actorApiKeyId | uuid | FK → ApiKey, NULL |
-| action | varchar(64) | `AUTH_LOGIN_SUCCEEDED`, `AUTH_LOGIN_FAILED`, `AUTH_LOGOUT`, `ORG_REGISTERED`, `ORG_SETTINGS_UPDATED`, `ORG_AI_PROCESSING_TOGGLED`, `INVITATION_CREATED`, `INVITATION_REVOKED`, `INVITATION_ACCEPTED`, `MEMBER_ROLE_CHANGED`, `MEMBER_DEACTIVATED`, `PASSWORD_CHANGED`, `SLA_POLICY_UPDATED`, `API_KEY_CREATED`, `API_KEY_REVOKED`, `CSV_IMPORTED`, `LEADS_EXPORTED`, `LEAD_DELETED`, `LEAD_REASSIGNED` |
+| action | varchar(64) | `AUTH_LOGIN_SUCCEEDED`, `AUTH_LOGIN_FAILED`, `AUTH_LOGOUT`, `ORG_REGISTERED`, `ORG_SETTINGS_UPDATED`, `ORG_AI_PROCESSING_TOGGLED`, `INVITATION_CREATED`, `INVITATION_REVOKED`, `INVITATION_ACCEPTED`, `MEMBER_ROLE_CHANGED`, `MEMBER_DEACTIVATED`, `PASSWORD_CHANGED`, `SLA_POLICY_UPDATED`, `API_KEY_CREATED`, `API_KEY_REVOKED`, `API_KEY_REVEALED`, `API_KEY_ROTATED`, `CSV_IMPORTED`, `LEADS_EXPORTED`, `LEAD_DELETED`, `LEAD_REASSIGNED` |
 | entityType, entityId | varchar(32), uuid | NULL |
 | subjectHash | char(64) | NULL; SHA-256 нормализованного email для подсчёта неудачных входов |
 | metadata | jsonb | Без ПДн клиентов: `{from,to}`, `{imported,skipped}`, `{role}` |
@@ -678,7 +680,7 @@ sequenceDiagram
 | POST `/leads/{id}/ai/draft-sent` | Отметить черновик отправленным | O H M (свои) | FR-071 |
 | POST `/analytics/weekly-summary` | AI-004 | O H | FR-074 |
 | GET `/ai/status` | Режим, согласие, использование | O H | FR-075 |
-| GET `/api-keys` · POST `/api-keys` · POST `/api-keys/{id}/revoke` | API-ключи | O | FR-062 |
+| GET `/api-keys` · POST `/api-keys` · POST `/api-keys/{id}/revoke` · POST `/api-keys/{id}/reveal` · POST `/api-keys/{id}/rotate` | API-ключи | O | FR-062 |
 | POST `/intake/leads` | Приём лида | `X-Api-Key` | FR-063 |
 | GET `/audit-logs` | Журнал | O | FR-091 |
 | GET `/health` · GET `/health/ready` | Проверки | Публичный | AC-068 |
@@ -832,7 +834,10 @@ type MyStatsKpis = {
 - Request: `{ firstResponseMinutes: int(1..1440), forgottenAfterHours: int(1..168), businessHoursEnabled: boolean, workdays: int(1..7)[] (1..7, уникальные), workStart: 'HH:mm', workEnd: 'HH:mm' }` + refine `workStart < workEnd`, минуты кратны 15. → 200 `SlaPolicyDto`. Аудит `SLA_POLICY_UPDATED` с `{from,to}`.
 
 #### POST `/api-keys` (FR-062)
-- Request: `{ name: string(2..50) }` → 201 `{ id, name, prefix, createdAt, key }` (`key` — только здесь). 422 `API_KEY_LIMIT`.
+- Request: `{ name: string(2..50) }` → 201 `{ id, name, prefix, createdAt, last3, revealable, key }`. 422 `API_KEY_LIMIT`.
+- GET `/api-keys` возвращает только активные ключи; «Удалить» в UI = POST `/revoke` (мягкое удаление, строка остаётся для аудита).
+- POST `/api-keys/{id}/reveal` → 200 `{ key }`, `Cache-Control: no-store`, аудит `API_KEY_REVEALED`, лимит 30 / 10 мин на пользователя (429 `RATE_LIMITED`). 422 `API_KEY_NOT_REVEALABLE` — ключ без шифротекста (создан до обновления) или не расшифровывается (сменился `API_KEY_ENCRYPTION_KEY`). Удалённый/чужой ключ → 404.
+- POST `/api-keys/{id}/rotate` → 201 `CreatedApiKeyDto` (новый ключ с тем же именем; старый отозван в той же транзакции под `FOR UPDATE` по организации, лимит не мешает). Аудит `API_KEY_ROTATED` (`replacedKeyId`).
 
 #### GET `/notifications`
 - Query: `unreadOnly?: boolean`, `limit` (≤50) → `{ items: [{ id, type, leadId, payload, readAt, createdAt }] }`. GET `/notifications/unread-count` → `{ count }`.
@@ -934,7 +939,7 @@ export interface AiProvider {
 - Пользовательская часть: `<lead_data>{JSON.stringify({source, message, name})}</lead_data>` — JSON-экранирование исключает «закрытие» тега текстом заявки; телефон не передаётся.
 - Черновик: дополнительно `companyName`, `managerFirstName`, `language`, `tone`, `analysis` (если есть); правила AI-003 (латиница для `uz`, «Siz», без цен/скидок/сроков вне входных данных, без ссылок, ≤700 символов).
 - Сводка за неделю: только агрегаты `analytics` (JSON), правило «используй только числа из входных данных».
-- **Пресет `GENERIC` (ADR-024):** отдельные шаблоны `lead-analysis-generic@1` и `reply-draft-generic@1`; шаблоны недвижимости не меняются, поэтому их кэш остаётся валидным.
+- **Пресет `GENERIC` (ADR-024):** отдельные шаблоны `lead-analysis-generic` и `reply-draft-generic`; шаблоны недвижимости не меняются, поэтому их кэш остаётся валидным. С ADR-025 (`@2`) в них подставляются название отрасли и подсказка из каталога отраслей.
   - Роль — «ассистент отдела продаж компании в Узбекистане». Поля `district`, `propertyType`, `rooms` всегда `null`: схема вывода та же, после разбора их обнуляет код.
   - Названия своих полей передаются блоком `<business_fields>` как JSON с ключом и подписью. Модель спрашивает о незаполненных в `missingInfo` и `nextQuestions`; они же входят в `inputHash`.
 

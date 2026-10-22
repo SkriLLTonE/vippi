@@ -1,9 +1,10 @@
-import { Copy } from 'lucide-react';
+import { Copy, LoaderCircle, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { cn, copyText } from '../lib';
 import { Button, type ButtonProps } from './button';
+import { Tooltip } from './menu';
 
 export function PageHeader({
   title,
@@ -49,6 +50,35 @@ export function CopyButton({
       <Copy aria-hidden />
       {label ?? t('common.copy')}
     </Button>
+  );
+}
+
+/** Icon-only button: `label` is the accessible name, `tooltip` (defaults to label) explains it on hover/focus. */
+export function IconButton({
+  icon: Icon,
+  label,
+  tooltip,
+  loading,
+  disabled,
+  className,
+  ...props
+}: { icon: LucideIcon; label: string; tooltip?: ReactNode } & Omit<ButtonProps, 'children' | 'size' | 'aria-label'>) {
+  const button = (
+    <Button variant="ghost" size="icon" aria-label={label} disabled={disabled || loading} aria-busy={loading || undefined} className={className} {...props}>
+      {loading ? <LoaderCircle className="animate-spin" aria-hidden /> : <Icon aria-hidden />}
+    </Button>
+  );
+  // Disabled buttons get no pointer/focus events, so the tooltip needs a focusable wrapper.
+  return (
+    <Tooltip content={tooltip ?? label}>
+      {disabled ? (
+        <span tabIndex={0} className="inline-flex rounded-md focus-visible:outline-2 focus-visible:outline-ring">
+          {button}
+        </span>
+      ) : (
+        button
+      )}
+    </Tooltip>
   );
 }
 

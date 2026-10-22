@@ -194,6 +194,8 @@ function foreignTargets(a: OrgA, actor: Client): Record<string, { id: string; bo
     'POST members/:id/deactivate': { id: a.membershipId },
     'POST invitations/:id/revoke': { id: a.invitation.id },
     'POST api-keys/:id/revoke': { id: a.apiKey.id },
+    'POST api-keys/:id/reveal': { id: a.apiKey.id },
+    'POST api-keys/:id/rotate': { id: a.apiKey.id },
     'POST notifications/:id/read': { id: a.notification.id },
   };
 }

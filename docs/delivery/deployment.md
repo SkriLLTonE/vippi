@@ -43,6 +43,14 @@
 
 Сменить пароль демо-аккаунтов: измените `DEMO_SEED_PASSWORD` (≥ 10 символов) и выполните переналивку выше. Сид идемпотентен: всегда одна демо-организация, данные только синтетические (`isDemo`, баннер «Демо-данные», телефоны `+99800…`).
 
+### Ключ шифрования API-ключей (`API_KEY_ENCRYPTION_KEY`)
+
+Полные API-ключи хранятся в БД зашифрованными (AES-256-GCM), чтобы владелец мог скопировать ключ позже («Настройки → API-ключи»). Для проверки входящих запросов по-прежнему используется только SHA-256-хэш.
+
+- В Blueprint переменная задана как `generateValue: true`: Render сам сгенерирует случайное значение (base64, 256 бит) при создании или синхронизации Blueprint. Если сервис создан раньше и Blueprint не синхронизирован — `vippi-leads` → **Environment** → добавьте `API_KEY_ENCRYPTION_KEY` = вывод `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` → Save. **Задайте её до деплоя этой версии:** при `NODE_ENV=production` без переменной API не стартует (health-check не пройдёт, Render оставит предыдущую версию).
+- Не меняйте значение без необходимости: после смены старые ключи продолжают принимать заявки, но скопировать их уже нельзя — нужна кнопка «Обновить» (ротация) у каждого ключа.
+- Ключи, созданные до этого обновления, хранятся только как хэш: в интерфейсе их можно удалить или обновить, но не скопировать.
+
 ### Включить Google Gemini
 
 1. `vippi-leads` → **Environment** → `GEMINI_API_KEY` = ключ → Save (сервис перезапустится). `AI_PROVIDER=gemini` уже задан в Blueprint.
@@ -102,6 +110,7 @@ docker run -d --name vippi-render-local --network vippi_default -p 8090:10000 \
   -e DATABASE_URL=postgresql://vippi:<пароль>@db:5432/vippi_render \
   -e PUBLIC_APP_URL=http://localhost:8090 -e COOKIE_SECURE=false \
   -e SLA_CRON_ENABLED=true -e DEMO_SEED_ON_START=if-missing -e DEMO_SEED_PASSWORD=<≥10 символов> \
+  -e API_KEY_ENCRYPTION_KEY=<32 байта base64> \
   vippi-app:render
 E2E_BASE_URL=http://localhost:8090 pnpm --filter @vippi/web exec playwright test
 ```

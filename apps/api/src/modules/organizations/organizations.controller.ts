@@ -1,8 +1,9 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, HttpCode, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import {
   AcceptInvitationSchema,
+  ApplyIndustryTemplateSchema,
   ChangeRoleSchema,
   CreateApiKeySchema,
   CreateInvitationSchema,
@@ -60,6 +61,19 @@ export class OrganizationsController {
     @RequestMeta() meta: ReqMeta,
   ) {
     return this.orgs.update(actor, body, meta);
+  }
+
+  /** ADR-025: switch industry and merge its template fields/labels. */
+  @Post('organization/industry-template')
+  @RequirePermission('org.manage')
+  @HttpCode(200)
+  @ApiZodBody(ApplyIndustryTemplateSchema)
+  applyIndustryTemplate(
+    @CurrentActor() actor: Actor,
+    @Body(new ZodPipe(ApplyIndustryTemplateSchema)) body: z.output<typeof ApplyIndustryTemplateSchema>,
+    @RequestMeta() meta: ReqMeta,
+  ) {
+    return this.orgs.applyIndustryTemplate(actor, body, meta);
   }
 
   @Get('lead-fields')
@@ -201,5 +215,21 @@ export class OrganizationsController {
     @RequestMeta() meta: ReqMeta,
   ): Promise<void> {
     await this.apiKeys.revoke(actor, id, meta);
+  }
+
+  /** POST (not GET) so the full key never lands in caches or access logs keyed by URL. */
+  @Post('api-keys/:id/reveal')
+  @RequirePermission('apiKey.manage')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  revealKey(@CurrentActor() actor: Actor, @Param('id', UuidParam) id: string, @RequestMeta() meta: ReqMeta) {
+    return this.apiKeys.reveal(actor, id, meta);
+  }
+
+  @Post('api-keys/:id/rotate')
+  @RequirePermission('apiKey.manage')
+  @Header('Cache-Control', 'no-store')
+  rotateKey(@CurrentActor() actor: Actor, @Param('id', UuidParam) id: string, @RequestMeta() meta: ReqMeta) {
+    return this.apiKeys.rotate(actor, id, meta);
   }
 }

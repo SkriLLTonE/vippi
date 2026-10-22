@@ -38,6 +38,10 @@ services:
       # Password of all demo accounts: random, generated once; read it in Dashboard → Environment.
       - key: DEMO_SEED_PASSWORD
         generateValue: true
+      # Encrypts API keys at rest so owners can copy them later (required in production).
+      # Random base64 256-bit value generated once; changing it makes existing keys non-copyable (rotate them).
+      - key: API_KEY_ENCRYPTION_KEY
+        generateValue: true
       # Gemini is used only with a key AND the organization's consent switch; empty key → rule-based mode.
       - key: AI_PROVIDER
         value: gemini

@@ -1,17 +1,27 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CreateApiKeySchema, type ApiKeyDto, type CreateApiKeyRequest, type CreatedApiKeyDto } from '@vippi/shared';
-import { KeyRound, Plus, TriangleAlert } from 'lucide-react';
+import {
+  CreateApiKeySchema,
+  INDUSTRY_TEMPLATES,
+  exampleLeadAttributes,
+  type ApiKeyDto,
+  type CreateApiKeyRequest,
+  type CreatedApiKeyDto,
+  type Locale,
+  type OrgLeadConfig,
+} from '@vippi/shared';
+import { Copy, Info, KeyRound, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { useUiLocale } from '@/entities/industry';
+import { useSession } from '@/entities/session';
 import { apiRequest } from '@/shared/api';
 import { env } from '@/shared/config';
-import { errorMessage, formatDateTime, validationMessage } from '@/shared/lib';
+import { copyTextFrom, errorMessage, formatDateTime, validationMessage } from '@/shared/lib';
 import {
   Alert,
-  Badge,
   Button,
   Card,
   CardContent,
@@ -27,6 +37,7 @@ import {
   ErrorState,
   Field,
   FormAlert,
+  IconButton,
   Input,
   Skeleton,
   Table,
@@ -35,20 +46,30 @@ import {
   Tr,
 } from '@/shared/ui';
 import { SettingsLayout } from '@/widgets/settings-nav';
+import { apiKeysQueryKey as keys, maskApiKey, revealApiKey } from '../model/api-keys';
+import { ApiKeyDialog } from './api-key-dialog';
 
 const MAX_ACTIVE = 5;
-const keys = ['api-keys'] as const;
 
-function curlExample(key: string): string {
-  const url = `${window.location.origin}${env.apiBaseUrl}/intake/leads`;
-  const body = JSON.stringify({
+/** ADR-025: intake body built from the organization's industry sample and its active custom fields. */
+function intakeExampleBody(org: Pick<OrgLeadConfig, 'industry' | 'leadFields'>, locale: Locale): Record<string, unknown> {
+  const sample = INDUSTRY_TEMPLATES[org.industry].sample;
+  const attributes = exampleLeadAttributes(org.leadFields, org.industry, locale);
+  return {
     fullName: 'Aziz Karimov',
     phone: '+998 90 000 00 00',
     source: 'WEBSITE',
-    message: 'Chilonzorda 2 xonali kvartira kerak',
+    message: sample.message[locale],
+    ...sample.realEstate,
+    ...(Object.keys(attributes).length > 0 ? { attributes } : {}),
     externalId: 'site-form-123',
-  });
-  return `curl -X POST '${url}' \\\n  -H 'X-Api-Key: ${key}' \\\n  -H 'Content-Type: application/json' \\\n  -d '${body}'`;
+  };
+}
+
+function curlExample(key: string, body: Record<string, unknown>): string {
+  const url = `${window.location.origin}${env.apiBaseUrl}/intake/leads`;
+  const json = JSON.stringify(body).replaceAll("'", "'\\''");
+  return `curl -X POST '${url}' \\\n  -H 'X-Api-Key: ${key}' \\\n  -H 'Content-Type: application/json' \\\n  -d '${json}'`;
 }
 
 function CreateKeyDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
@@ -72,8 +93,8 @@ function CreateKeyDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
           <Code>
             <span data-testid="api-key-value">{create.data.key}</span>
           </Code>
-          <Alert tone="warning" icon={<TriangleAlert aria-hidden />}>
-            {t('apiKeys.shownOnce')}
+          <Alert tone="info" icon={<Info aria-hidden />}>
+            {t('apiKeys.copyLater')}
           </Alert>
           <div className="flex flex-col-reverse gap-2 md:flex-row md:justify-end">
             <Button variant="outline" onClick={close}>
@@ -104,21 +125,33 @@ function CreateKeyDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
 
 export function SettingsApiKeysPage() {
   const { t } = useTranslation();
+  const { organization } = useSession();
+  const locale = useUiLocale();
   const qc = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
-  const [revoking, setRevoking] = useState<ApiKeyDto | null>(null);
+  const [opened, setOpened] = useState<ApiKeyDto | null>(null);
+  const [deleting, setDeleting] = useState<ApiKeyDto | null>(null);
   const list = useQuery({ queryKey: keys, queryFn: ({ signal }) => apiRequest<ApiKeyDto[]>('/api-keys', { signal }) });
-  const revoke = useMutation({
+  const remove = useMutation({
     mutationFn: (id: string) => apiRequest<void>(`/api-keys/${id}/revoke`, { method: 'POST' }),
     onSuccess: () => {
-      setRevoking(null);
-      toast.success(t('apiKeys.revoked'));
+      setDeleting(null);
+      toast.success(t('apiKeys.deleted'));
       void qc.invalidateQueries({ queryKey: keys });
     },
     onError: (e) => toast.error(errorMessage(e, t)),
   });
-  const active = (list.data ?? []).filter((k) => !k.revokedAt);
-  const limitReached = active.length >= MAX_ACTIVE;
+  const copy = async (k: ApiKeyDto) => {
+    try {
+      const ok = await copyTextFrom(() => revealApiKey(k.id));
+      if (ok) toast.success(t('apiKeys.copied'));
+      else toast.error(t('common.copyFailed'));
+    } catch (e) {
+      toast.error(errorMessage(e, t));
+    }
+  };
+  const limitReached = (list.data?.length ?? 0) >= MAX_ACTIVE;
+  const example = curlExample('vpk_…', intakeExampleBody(organization, locale));
 
   return (
     <SettingsLayout>
@@ -129,8 +162,11 @@ export function SettingsApiKeysPage() {
             <CardDescription>{t('apiKeys.description')}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
-            <Code>{curlExample('vpk_…')}</Code>
-            <CopyButton text={curlExample('vpk_…')} size="sm" className="self-start" />
+            <Code>
+              <span data-testid="intake-example">{example}</span>
+            </Code>
+            <p className="text-xs text-muted-foreground">{t('apiKeys.exampleHint')}</p>
+            <CopyButton text={example} size="sm" className="self-start" />
           </CardContent>
         </Card>
         <div className="flex items-center justify-end gap-3">
@@ -164,21 +200,40 @@ export function SettingsApiKeysPage() {
             <tbody>
               {list.data.map((k) => (
                 <Tr key={k.id}>
-                  <Td className="font-medium">{k.name}</Td>
-                  <Td className="font-mono text-xs">{k.prefix}…</Td>
+                  <Td className="font-medium">
+                    <button
+                      type="button"
+                      className="rounded-sm text-left text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+                      onClick={() => setOpened(k)}
+                    >
+                      {k.name}
+                    </button>
+                  </Td>
+                  <Td className="font-mono text-xs" data-testid="api-key-mask">
+                    {maskApiKey(k)}
+                  </Td>
                   <Td className="hidden md:table-cell">
                     <span className="tabular">{formatDateTime(k.createdAt)}</span>
                     {k.createdBy ? <span className="text-muted-foreground"> · {k.createdBy.fullName}</span> : null}
                   </Td>
                   <Td className="hidden tabular lg:table-cell">{k.lastUsedAt ? formatDateTime(k.lastUsedAt) : '—'}</Td>
                   <Td className="text-right">
-                    {k.revokedAt ? (
-                      <Badge className="bg-status-lost-bg text-status-lost">{t('apiKeys.revokedBadge')}</Badge>
-                    ) : (
-                      <Button variant="ghost" size="sm" className="text-danger" onClick={() => setRevoking(k)}>
-                        {t('apiKeys.revoke')}
-                      </Button>
-                    )}
+                    <div className="flex justify-end gap-1">
+                      <IconButton
+                        icon={Copy}
+                        label={t('apiKeys.copyNamed', { name: k.name })}
+                        tooltip={k.revealable ? t('apiKeys.copy') : t('apiKeys.legacyCopy')}
+                        disabled={!k.revealable}
+                        onClick={() => void copy(k)}
+                      />
+                      <IconButton
+                        icon={Trash2}
+                        label={t('apiKeys.deleteNamed', { name: k.name })}
+                        tooltip={t('apiKeys.delete')}
+                        className="text-danger"
+                        onClick={() => setDeleting(k)}
+                      />
+                    </div>
                   </Td>
                 </Tr>
               ))}
@@ -187,14 +242,15 @@ export function SettingsApiKeysPage() {
         )}
       </div>
       <CreateKeyDialog open={createOpen} onOpenChange={setCreateOpen} />
+      {opened ? <ApiKeyDialog key={opened.id} apiKey={opened} onClose={() => setOpened(null)} /> : null}
       <ConfirmDialog
-        open={!!revoking}
-        onOpenChange={(v) => (v ? undefined : setRevoking(null))}
-        title={t('apiKeys.revokeTitle', { name: revoking?.name ?? '' })}
-        description={t('apiKeys.revokeText')}
-        confirmLabel={t('apiKeys.revoke')}
-        loading={revoke.isPending}
-        onConfirm={() => revoking && revoke.mutate(revoking.id)}
+        open={!!deleting}
+        onOpenChange={(v) => (v ? undefined : setDeleting(null))}
+        title={t('apiKeys.deleteTitle', { name: deleting?.name ?? '' })}
+        description={t('apiKeys.deleteText')}
+        confirmLabel={t('apiKeys.delete')}
+        loading={remove.isPending}
+        onConfirm={() => deleting && remove.mutate(deleting.id)}
       />
     </SettingsLayout>
   );

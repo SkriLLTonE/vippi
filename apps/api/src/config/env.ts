@@ -1,5 +1,19 @@
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { parseDisabledFeatures } from '@vippi/shared';
+
+/** Dev/test only: production refuses to start without API_KEY_ENCRYPTION_KEY. */
+const DEV_API_KEY_ENCRYPTION_KEY = createHash('sha256').update('vippi-dev-only-api-key-encryption').digest();
+
+function parseEncryptionKey(value: string): Buffer | null {
+  const v = value.trim();
+  const bytes = /^[0-9a-f]{64}$/i.test(v)
+    ? Buffer.from(v, 'hex')
+    : /^[A-Za-z0-9+/_-]{43}={0,2}$/.test(v)
+      ? Buffer.from(v, 'base64')
+      : null;
+  return bytes?.length === 32 ? bytes : null;
+}
 
 const bool = z
   .enum(['true', 'false', '1', '0'])
@@ -57,18 +71,32 @@ const EnvSchema = z
     SMTP_PASSWORD: z.string().optional(),
     /** Fallback From (address used when org.emailFrom is unset; display name is replaced by org.name). */
     SMTP_FROM: z.string().optional(),
+    /**
+     * 32-byte key (base64 or 64 hex chars) encrypting API keys at rest (AES-256-GCM) so owners can copy them later.
+     * Required in production; development/test fall back to a fixed dev-only key. Changing it makes existing keys
+     * non-copyable (they keep working; rotate them).
+     */
+    API_KEY_ENCRYPTION_KEY: z
+      .string()
+      .refine((v) => parseEncryptionKey(v) !== null, 'API_KEY_ENCRYPTION_KEY must be 32 bytes: base64 or 64 hex chars')
+      .optional(),
   })
   .refine((e) => !e.VAPID_PUBLIC_KEY === !e.VAPID_PRIVATE_KEY, {
     path: ['VAPID_PRIVATE_KEY'],
     message: 'VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be set together',
   })
-  .transform((e) => ({
+  .refine((e) => e.NODE_ENV !== 'production' || !!e.API_KEY_ENCRYPTION_KEY, {
+    path: ['API_KEY_ENCRYPTION_KEY'],
+    message: 'API_KEY_ENCRYPTION_KEY is required in production (32 random bytes, base64)',
+  })
+  .transform(({ API_KEY_ENCRYPTION_KEY, ...e }) => ({
     ...e,
     COOKIE_SECURE: e.COOKIE_SECURE ?? new URL(e.PUBLIC_APP_URL).protocol === 'https:',
     SMTP_SECURE: e.SMTP_SECURE ?? e.SMTP_PORT === 465,
     publicOrigin: new URL(e.PUBLIC_APP_URL).origin,
     features: parseDisabledFeatures(e.DISABLED_FEATURES),
     notifyChannels: { push: !!e.VAPID_PUBLIC_KEY && !!e.VAPID_PRIVATE_KEY, email: !!e.SMTP_HOST && !!e.SMTP_FROM },
+    apiKeyEncryptionKey: (API_KEY_ENCRYPTION_KEY && parseEncryptionKey(API_KEY_ENCRYPTION_KEY)) || DEV_API_KEY_ENCRYPTION_KEY,
   }));
 
 export type AppConfig = z.infer<typeof EnvSchema>;

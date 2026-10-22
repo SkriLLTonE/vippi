@@ -14,10 +14,12 @@ interface DialogProps {
   size?: 'md' | 'lg';
   /** Blocks closing by Esc/overlay/close button (e.g. while CSV import is running). */
   locked?: boolean;
+  /** Hides the header close (X) when the body has its own Close button; Esc and overlay still close. */
+  hideCloseButton?: boolean;
 }
 
 /** Centered dialog on ≥md, bottom sheet on small screens (design-system §5). */
-export function Dialog({ open, onOpenChange, title, description, children, footer, size = 'md', locked }: DialogProps) {
+export function Dialog({ open, onOpenChange, title, description, children, footer, size = 'md', locked, hideCloseButton }: DialogProps) {
   const { t } = useTranslation();
   const guard = (e: Event) => {
     if (locked) e.preventDefault();
@@ -54,7 +56,7 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
               <D.Title className="text-lg font-semibold">{title}</D.Title>
               {description ? <D.Description className="text-sm text-muted-foreground">{description}</D.Description> : null}
             </div>
-            {!locked ? (
+            {!locked && !hideCloseButton ? (
               <D.Close
                 className="-mr-2 inline-flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-background-subtle"
                 aria-label={t('common.close')}
