@@ -117,6 +117,8 @@ async function seedOrgA() {
     workStart: '09:00',
     workEnd: '18:00',
   });
+  const leadField = await owner.post('/lead-fields', { key: 'zetaField', label: { ru: 'ZETA field' }, type: 'text' });
+  if (leadField.status !== 201) throw new Error('seedOrgA: lead field not created');
   ctx.clock.advance(30 * 60_000);
   await ctx.app.get(SlaSchedulerService).runOnce(ctx.clock.now());
   const notification = (await manager.get('/notifications')).body.items[0] as { id: string };
@@ -285,6 +287,20 @@ describe('tenant isolation: every :id route (SEC-007, AC-067)', () => {
         .status,
     ).toBe(422);
   });
+
+  it('custom lead fields are per organization: :key routes and attributes of A are unknown in B (ADR-024)', async () => {
+    const a = await seedOrgA();
+    const ownerB = await registerOrg(ctx, 'Org B');
+    const headB = await addMember(ctx, ownerB, 'HEAD_OF_SALES');
+    for (const actor of [ownerB, headB]) {
+      expect((await actor.patch('/lead-fields/zetaField', { required: true })).status).toBe(404);
+      expect((await actor.delete('/lead-fields/zetaField')).status).toBe(404);
+    }
+    const res = await ownerB.post('/leads', { fullName: 'X', source: 'WEBSITE', attributes: { zetaField: 'v' } });
+    expect(res.status).toBe(400);
+    expect(res.body.error.details[0]).toMatchObject({ path: 'attributes.zetaField', code: 'unknown_field' });
+    expect((await a.owner.get('/lead-fields')).body).toEqual([expect.objectContaining({ key: 'zetaField', required: false })]);
+  });
 });
 
 describe('tenant isolation: lists, exports and aggregates never leak (SEC-007)', () => {
@@ -302,7 +318,7 @@ describe('tenant isolation: lists, exports and aggregates never leak (SEC-007)',
     for (const actor of [ownerB, headB, managerB]) {
       for (const route of gets) {
         const res = await actor.get(
-          `/${route.path}${route.path === 'analytics/dashboard' ? '?preset=30d' : ''}`,
+          `/${route.path}${route.path.startsWith('analytics/') ? '?preset=30d' : ''}`,
         );
         const text = res.text ?? JSON.stringify(res.body);
         for (const marker of a.markers) expect(text, `${route.path} leaks ${marker}`).not.toContain(marker);

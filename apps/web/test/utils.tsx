@@ -9,6 +9,7 @@ import {
   type LeadAnalysis,
   type LeadDto,
   type MeResponse,
+  type MyStatsResponse,
   type Role,
 } from '@vippi/shared';
 import type { ReactNode } from 'react';
@@ -29,6 +30,9 @@ export function makeMe(role: Role = 'OWNER', overrides: Partial<MeResponse> = {}
       isDemo: false,
       aiExternalProcessingEnabled: false,
       timezone: 'Asia/Tashkent',
+      industryPreset: 'REAL_ESTATE',
+      leadFields: [],
+      statusLabels: {},
     },
     role,
     permissions: permissionsFor(role),
@@ -51,6 +55,7 @@ export function makeLead(overrides: Partial<LeadDto> = {}): LeadDto {
     district: null,
     propertyType: null,
     rooms: null,
+    attributes: {},
     status: 'NEW',
     lostReason: null,
     lostComment: null,
@@ -69,6 +74,40 @@ export function makeLead(overrides: Partial<LeadDto> = {}): LeadDto {
     closedAt: null,
     createdAt: '2026-10-19T05:00:00.000Z',
     updatedAt: '2026-10-19T05:00:00.000Z',
+    ...overrides,
+  };
+}
+
+export function makeMyStats(overrides: Partial<MyStatsResponse> = {}): MyStatsResponse {
+  return {
+    period: { from: '2026-10-13', to: '2026-10-19', timezone: 'Asia/Tashkent' },
+    me: {
+      received: 12,
+      inWork: 5,
+      closed: 7,
+      medianFirstResponseSeconds: 480,
+      slaMetRate: 0.9,
+      breached: 1,
+      won: 3,
+      conversionRate: 0.25,
+    },
+    team: {
+      size: 4,
+      average: {
+        received: 10.5,
+        inWork: 4,
+        closed: 6.5,
+        medianFirstResponseSeconds: 900,
+        slaMetRate: 0.75,
+        breached: 2.25,
+        won: 2,
+        conversionRate: 0.3,
+      },
+    },
+    daily: [
+      { date: '2026-10-18', leads: 4, breached: 0, teamAverageLeads: 3.5 },
+      { date: '2026-10-19', leads: 8, breached: 1, teamAverageLeads: 7 },
+    ],
     ...overrides,
   };
 }

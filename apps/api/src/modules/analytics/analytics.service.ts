@@ -9,6 +9,8 @@ import {
   type DashboardResponse,
   type LeadSource,
   type ManagerRow,
+  type MyStatsQuery,
+  type MyStatsResponse,
   type SourceRow,
 } from '@vippi/shared';
 import type { Actor } from '../../common/actor.js';
@@ -17,10 +19,12 @@ import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { ProductEvents } from '../../common/product-events.js';
 import { APP_CONFIG, type AppConfig } from '../../config/env.js';
 import { SlaPolicyService } from '../sla/sla-policy.service.js';
+import { teamAverage, toMyStatsKpis } from './domain/my-stats.js';
 
 interface AggRow {
   key: string | null;
   leads: number;
+  closed: number;
   median: number | null;
   met: number;
   breached: number;
@@ -60,6 +64,7 @@ export class AnalyticsService {
     return this.prisma.db.$queryRaw<AggRow[]>`
       SELECT ${dim} AS key,
         count(*)::int AS leads,
+        (count(*) FILTER (WHERE "status" IN ('WON', 'LOST')))::int AS closed,
         percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM ("firstResponseAt" - "receivedAt")))::float8 AS median,
         (count(*) FILTER (WHERE "slaState" = 'MET'))::int AS met,
         (count(*) FILTER (WHERE "slaState" = 'BREACHED'))::int AS breached,
@@ -168,6 +173,62 @@ export class AnalyticsService {
     };
   }
 
+  /** FR-056: the caller's KPIs next to the team mean; colleagues appear only inside aggregates. */
+  async myStats(actor: Actor, q: MyStatsQuery): Promise<MyStatsResponse> {
+    const now = this.clock.now();
+    const period = this.resolvePeriod(q, now);
+    const { start, end } = zonedPeriodToUtc(period.from, period.to);
+    const policy = await this.sla.getForOrg(actor.orgId);
+    const forgottenBefore = new Date(now.getTime() - policy.forgottenAfterHours * 3_600_000);
+
+    const [byAssignee, managers, dailyRows] = await Promise.all([
+      this.aggregate(actor.orgId, start, end, forgottenBefore, Prisma.sql`"assigneeId"::text`),
+      this.prisma.db.membership.findMany({
+        where: { organizationId: actor.orgId, status: 'ACTIVE', role: 'MANAGER' },
+        select: { userId: true },
+      }),
+      this.prisma.db.$queryRaw<Array<{ date: string; leads: number; breached: number; team: number }>>`
+        SELECT to_char(("receivedAt" AT TIME ZONE 'Asia/Tashkent')::date, 'YYYY-MM-DD') AS date,
+          (count(*) FILTER (WHERE "assigneeId" = ${actor.userId}::uuid))::int AS leads,
+          (count(*) FILTER (WHERE "assigneeId" = ${actor.userId}::uuid AND "slaState" = 'BREACHED'))::int AS breached,
+          (count(*) FILTER (WHERE "assigneeId" IS NOT NULL))::int AS team
+        FROM "Lead"
+        WHERE "organizationId" = ${actor.orgId}::uuid AND "deletedAt" IS NULL
+          AND "receivedAt" >= ${start} AND "receivedAt" < ${end}
+        GROUP BY 1`,
+    ]);
+
+    // Same population as the dashboard's manager table (FR-052), minus the "unassigned" row.
+    const aggByUser = new Map(byAssignee.filter((r) => r.key !== null).map((r) => [r.key, r]));
+    const team = new Set<string | null>([...managers.map((m) => m.userId), ...aggByUser.keys()]);
+    const average = teamAverage([...team].map((userId) => toMyStatsKpis(aggByUser.get(userId))));
+
+    const byDate = new Map(dailyRows.map((r) => [r.date, r]));
+    const daily = this.days(period).map((date) => {
+      const r = byDate.get(date);
+      return {
+        date,
+        leads: r?.leads ?? 0,
+        breached: r?.breached ?? 0,
+        teamAverageLeads: average ? (r?.team ?? 0) / team.size : null,
+      };
+    });
+
+    this.events.emit('my_stats_viewed', { organizationId: actor.orgId, userId: actor.userId }, { preset: q.preset });
+    return {
+      period: { ...period, timezone: 'Asia/Tashkent' },
+      me: toMyStatsKpis(aggByUser.get(actor.userId)),
+      team: { size: team.size, average },
+      daily,
+    };
+  }
+
+  private days(period: { from: string; to: string }): string[] {
+    const out: string[] = [];
+    for (let d = period.from; d <= period.to; d = addDaysToDateString(d, 1)) out.push(d);
+    return out;
+  }
+
   private async daily(orgId: string, start: Date, end: Date, period: { from: string; to: string }): Promise<DailyRow[]> {
     const rows = await this.prisma.db.$queryRaw<Array<{ date: string; leads: number; breached: number }>>`
       SELECT to_char(("receivedAt" AT TIME ZONE 'Asia/Tashkent')::date, 'YYYY-MM-DD') AS date,
@@ -178,11 +239,9 @@ export class AnalyticsService {
         AND "receivedAt" >= ${start} AND "receivedAt" < ${end}
       GROUP BY 1`;
     const byDate = new Map(rows.map((r) => [r.date, r]));
-    const out: DailyRow[] = [];
-    for (let d = period.from; d <= period.to; d = addDaysToDateString(d, 1)) {
-      const r = byDate.get(d);
-      out.push({ date: d, leads: r?.leads ?? 0, breached: r?.breached ?? 0 });
-    }
-    return out;
+    return this.days(period).map((date) => {
+      const r = byDate.get(date);
+      return { date, leads: r?.leads ?? 0, breached: r?.breached ?? 0 };
+    });
   }
 }

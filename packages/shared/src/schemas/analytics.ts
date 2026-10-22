@@ -76,3 +76,36 @@ export interface DashboardResponse {
   bySource: SourceRow[];
   daily: DailyRow[] | null;
 }
+
+/** FR-056: personal statistics. The caller is always the subject — there is no user parameter. */
+export const MyStatsQuerySchema = z.object({ preset: z.enum(DASHBOARD_PRESETS) }).strict();
+export type MyStatsQuery = z.infer<typeof MyStatsQuerySchema>;
+
+/** Team averages are hidden below this size so they cannot be reversed into a colleague's numbers. */
+export const MY_STATS_MIN_TEAM_SIZE = 3;
+
+export interface MyStatsKpis {
+  received: number;
+  inWork: number;
+  closed: number;
+  medianFirstResponseSeconds: number | null;
+  slaMetRate: number | null;
+  breached: number;
+  won: number;
+  conversionRate: number | null;
+}
+
+export interface MyStatsDailyRow {
+  date: string;
+  leads: number;
+  breached: number;
+  teamAverageLeads: number | null;
+}
+
+export interface MyStatsResponse {
+  period: { from: string; to: string; timezone: 'Asia/Tashkent' };
+  me: MyStatsKpis;
+  /** Mean per team member; `average` is null when `size` < MY_STATS_MIN_TEAM_SIZE. */
+  team: { size: number; average: MyStatsKpis | null };
+  daily: MyStatsDailyRow[];
+}

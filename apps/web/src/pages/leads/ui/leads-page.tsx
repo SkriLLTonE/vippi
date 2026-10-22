@@ -12,6 +12,7 @@ import { ExportCsvButton } from './export-csv-button';
 import { FiltersBar } from './filters-bar';
 import { ImportCsvButton } from './import-csv-dialog';
 import { LeadsTable } from './leads-table';
+import { MyStatsStrip } from './my-stats-strip';
 
 function PathCard({ icon: Icon, title, children }: { icon: LucideIcon; title: string; children: ReactNode }) {
   return (
@@ -140,6 +141,7 @@ export function LeadsPage() {
           </>
         }
       />
+      {state.assigneeId === 'me' && can('stats.self.read') ? <MyStatsStrip /> : null}
       <FiltersBar filters={filters} />
       {body}
     </>
