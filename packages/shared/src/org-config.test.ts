@@ -127,8 +127,11 @@ describe('industry preset and status labels', () => {
     expect(RegisterOrganizationSchema.safeParse({ ...base, industryPreset: 'CARS' }).success).toBe(false);
   });
 
-  it('organization update accepts preset and WON/LOST labels only', () => {
+  it('organization update accepts preset, WON/LOST labels and emailFrom', () => {
     expect(UpdateOrganizationSchema.safeParse({ industryPreset: 'GENERIC', statusLabels: { WON: { ru: 'Записался' } } }).success).toBe(true);
+    expect(UpdateOrganizationSchema.safeParse({ emailFrom: 'leads@agency.test' }).success).toBe(true);
+    expect(UpdateOrganizationSchema.safeParse({ emailFrom: null }).success).toBe(true);
+    expect(UpdateOrganizationSchema.safeParse({ emailFrom: 'not-an-email' }).success).toBe(false);
     expect(StatusLabelsSchema.safeParse({ NEW: { ru: 'Свежий' } }).success).toBe(false);
     expect(StatusLabelsSchema.safeParse({ WON: { ru: 'x'.repeat(31) } }).success).toBe(false);
   });

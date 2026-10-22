@@ -143,6 +143,8 @@ model Organization {
   timezone                    String   @default("Asia/Tashkent") @db.VarChar(64)
   defaultLocale               String   @default("ru") @db.VarChar(2)
   isDemo                      Boolean  @default(false)
+  /// Optional From address for notification emails; display name always uses `name`. Falls back to SMTP_FROM address.
+  emailFrom                   String?  @db.VarChar(254)
   aiExternalProcessingEnabled Boolean  @default(false)
   industryPreset              IndustryPreset @default(REAL_ESTATE)
   /// Custom lead field definitions (≤ 8), validated by `LeadFieldDefSchema` from @vippi/shared.

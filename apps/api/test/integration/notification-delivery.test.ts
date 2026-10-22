@@ -21,9 +21,9 @@ class FakePush extends PushSender {
 }
 
 class FakeEmail extends EmailSender {
-  sent: Array<{ to: string; message: EmailMessage }> = [];
-  async send(to: string, message: EmailMessage): Promise<void> {
-    this.sent.push({ to, message });
+  sent: Array<{ to: string; message: EmailMessage; from?: string }> = [];
+  async send(to: string, message: EmailMessage, from?: string): Promise<void> {
+    this.sent.push({ to, message, from });
   }
 }
 
@@ -111,7 +111,7 @@ describe('push and email delivery (ADR-023)', () => {
   });
 
   it('delivers an SLA breach once to push and email, without client data', async () => {
-    const owner = await registerOrg(ctx);
+    const owner = await registerOrg(ctx, 'Acme Agency');
     await owner.post('/notifications/push-subscriptions', subscription('owner-laptop'));
     await owner.patch('/notifications/settings', { emailEnabled: true });
     const lead = await breachFirstLead(ctx, owner);
@@ -123,6 +123,7 @@ describe('push and email delivery (ADR-023)', () => {
     expect(push.sent[0]?.message.url).toBe(`http://localhost:8080/leads/${lead.id}`);
     const mail = email.sent[0];
     expect(mail?.to).toMatch(/^owner\./);
+    expect(mail?.from).toBe('"Acme Agency" <no-reply@example.test>');
     expect(mail?.message.text).toContain(`/leads/${lead.id}`);
     const all = JSON.stringify([push.sent, email.sent]);
     expect(all).not.toContain('Secret Client');
@@ -130,6 +131,15 @@ describe('push and email delivery (ADR-023)', () => {
 
     expect(await dispatch()).toMatchObject({ claimed: 0, push: 0, email: 0 });
     expect(push.sent).toHaveLength(1);
+  });
+
+  it('uses Organization.emailFrom when set', async () => {
+    const owner = await registerOrg(ctx, 'Brand Co');
+    await owner.patch('/organization', { emailFrom: 'hello@brand.test' });
+    await owner.patch('/notifications/settings', { emailEnabled: true });
+    await breachFirstLead(ctx, owner);
+    expect(await dispatch()).toMatchObject({ email: 1 });
+    expect(email.sent[0]?.from).toBe('"Brand Co" <hello@brand.test>');
   });
 
   it('respects the email opt-out, demo organizations and expired subscriptions', async () => {

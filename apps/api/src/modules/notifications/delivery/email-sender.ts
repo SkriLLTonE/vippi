@@ -4,7 +4,7 @@ import { APP_CONFIG, type AppConfig } from '../../../config/env.js';
 import type { EmailMessage } from './messages.js';
 
 export abstract class EmailSender {
-  abstract send(to: string, message: EmailMessage): Promise<void>;
+  abstract send(to: string, message: EmailMessage, from?: string): Promise<void>;
 }
 
 @Injectable()
@@ -31,8 +31,8 @@ export class SmtpEmailSender extends EmailSender implements OnModuleDestroy {
     return this.transport;
   }
 
-  async send(to: string, message: EmailMessage): Promise<void> {
-    await this.getTransport().sendMail({ from: this.config.SMTP_FROM, to, ...message });
+  async send(to: string, message: EmailMessage, from?: string): Promise<void> {
+    await this.getTransport().sendMail({ from: from ?? this.config.SMTP_FROM, to, ...message });
   }
 
   onModuleDestroy(): void {

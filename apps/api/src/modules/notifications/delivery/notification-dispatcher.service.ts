@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { APP_CONFIG, type AppConfig } from '../../../config/env.js';
 import { Clock } from '../../../common/clock.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
+import { formatNotificationFrom } from './email-from.js';
 import { EmailSender } from './email-sender.js';
 import { renderEmail, renderPush, type DeliverableNotification } from './messages.js';
 import { PushSender } from './push-sender.js';
@@ -108,7 +109,11 @@ export class NotificationDispatcherService {
           locale: true,
           emailNotificationsEnabled: true,
           membership: {
-            select: { organizationId: true, status: true, organization: { select: { isDemo: true } } },
+            select: {
+              organizationId: true,
+              status: true,
+              organization: { select: { isDemo: true, name: true, emailFrom: true } },
+            },
           },
         },
       }),
@@ -148,9 +153,14 @@ export class NotificationDispatcherService {
 
       // Demo organizations use synthetic, undeliverable addresses.
       if (emailOn && user.emailNotificationsEnabled && !m.organization.isDemo) {
+        const from = formatNotificationFrom(
+          m.organization.name,
+          m.organization.emailFrom,
+          this.config.SMTP_FROM ?? '',
+        );
         tasks.push(
           this.emailSender
-            .send(user.email, renderEmail(item, user.locale, this.config.publicOrigin))
+            .send(user.email, renderEmail(item, user.locale, this.config.publicOrigin), from)
             .then(() => {
               result.email++;
             }),

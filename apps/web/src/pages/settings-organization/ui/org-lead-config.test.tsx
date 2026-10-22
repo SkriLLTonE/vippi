@@ -10,12 +10,13 @@ const org: OrganizationDto = {
   id: 'o-1',
   name: 'Test Agency',
   isDemo: false,
+  emailFrom: null,
   aiExternalProcessingEnabled: false,
   timezone: 'Asia/Tashkent',
   industryPreset: 'REAL_ESTATE',
   leadFields: [],
   statusLabels: {},
-} as OrganizationDto;
+};
 
 describe('organization lead configuration (ADR-024)', () => {
   it('owner switches the industry preset', async () => {

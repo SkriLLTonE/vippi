@@ -55,6 +55,7 @@ const EnvSchema = z
     SMTP_SECURE: bool.optional(),
     SMTP_USER: z.string().optional(),
     SMTP_PASSWORD: z.string().optional(),
+    /** Fallback From (address used when org.emailFrom is unset; display name is replaced by org.name). */
     SMTP_FROM: z.string().optional(),
   })
   .refine((e) => !e.VAPID_PUBLIC_KEY === !e.VAPID_PRIVATE_KEY, {

@@ -12,6 +12,7 @@ import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { RateLimiter } from '../../common/rate-limiter.js';
 import type { ReqMeta } from '../../common/req-meta.js';
 import { APP_CONFIG, type AppConfig } from '../../config/env.js';
+import { formatNotificationFrom } from './delivery/email-from.js';
 import { EmailSender } from './delivery/email-sender.js';
 import { renderTest } from './delivery/messages.js';
 import { PushSender } from './delivery/push-sender.js';
@@ -104,7 +105,9 @@ export class NotificationSettingsService {
         email: true,
         locale: true,
         emailNotificationsEnabled: true,
-        membership: { select: { organization: { select: { isDemo: true } } } },
+        membership: {
+          select: { organization: { select: { isDemo: true, name: true, emailFrom: true } } },
+        },
       },
     });
     if (!user) throw notFound();
@@ -130,13 +133,11 @@ export class NotificationSettingsService {
       }
     }
 
-    if (
-      this.config.notifyChannels.email &&
-      user.emailNotificationsEnabled &&
-      !user.membership?.organization.isDemo
-    ) {
+    const org = user.membership?.organization;
+    if (this.config.notifyChannels.email && user.emailNotificationsEnabled && org && !org.isDemo) {
       try {
-        await this.emailSender.send(user.email, message.email);
+        const from = formatNotificationFrom(org.name, org.emailFrom, this.config.SMTP_FROM ?? '');
+        await this.emailSender.send(user.email, message.email, from);
         result.email = true;
       } catch (e) {
         this.logger.warn({ msg: 'test email failed', err: (e as { code?: unknown }).code ?? 'unknown' });

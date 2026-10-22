@@ -35,6 +35,7 @@ export class OrganizationsService {
       name: org.name,
       timezone: org.timezone,
       isDemo: org.isDemo,
+      emailFrom: org.emailFrom,
       aiExternalProcessingEnabled: org.aiExternalProcessingEnabled,
       ...toOrgLeadConfig(org),
     };
@@ -48,6 +49,7 @@ export class OrganizationsService {
         where: { id: actor.orgId },
         data: {
           ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(input.emailFrom !== undefined ? { emailFrom: input.emailFrom } : {}),
           ...(input.aiExternalProcessingEnabled !== undefined
             ? { aiExternalProcessingEnabled: input.aiExternalProcessingEnabled }
             : {}),
@@ -57,6 +59,7 @@ export class OrganizationsService {
       });
       const settingsFields: string[] = [];
       if (input.name !== undefined && input.name !== before.name) settingsFields.push('name');
+      if (input.emailFrom !== undefined && input.emailFrom !== before.emailFrom) settingsFields.push('emailFrom');
       if (
         input.statusLabels !== undefined &&
         JSON.stringify(input.statusLabels) !== JSON.stringify(parseStatusLabels(before.statusLabels))

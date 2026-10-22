@@ -76,6 +76,8 @@ export type ChangeRoleRequest = z.infer<typeof ChangeRoleSchema>;
 export const UpdateOrganizationSchema = z
   .object({
     name: nameSchema.optional(),
+    /** Notification email From address; null clears. Display name always uses organization name. */
+    emailFrom: emailSchema.nullable().optional(),
     aiExternalProcessingEnabled: z.boolean().optional(),
     industryPreset: z.enum(INDUSTRY_PRESETS).optional(),
     statusLabels: StatusLabelsSchema.optional(),
@@ -137,6 +139,8 @@ export interface OrganizationDto extends OrgLeadConfig {
   name: string;
   timezone: string;
   isDemo: boolean;
+  /** Optional From address for notification emails; null => use SMTP_FROM address. */
+  emailFrom: string | null;
   aiExternalProcessingEnabled: boolean;
 }
 
