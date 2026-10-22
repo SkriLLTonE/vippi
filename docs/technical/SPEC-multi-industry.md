@@ -21,7 +21,7 @@
 - A4. Удалённое определение скрывает значения (API их не отдаёт, но не удаляет); повторное создание с тем же ключом снова их показывает.
 - A5. Поля недвижимости при `GENERIC` API принимает и хранит (intake/CSV не ломаются), UI их не показывает.
 - A6. Подписи статусов применяются в вебе через переопределение ключей i18next (`lead.status.WON` и т. п.), поэтому действуют везде, где рендерится статус.
-- A7. Промпты: недвижимость — без изменений (`lead-analysis@2`, `reply-draft@2`, кэш сохраняется); универсальные — отдельные id `lead-analysis-generic@1`, `reply-draft-generic@1`, так что ключи кэша `AiInsight` не пересекаются.
+- A7. Промпты: недвижимость — без изменений (`lead-analysis@2`, `reply-draft@2`, кэш сохраняется); универсальные — отдельные id `lead-analysis-generic@1`, `reply-draft-generic@1`, так что ключи кэша `AiInsight` не пересекаются. С ADR-025 — `@2` (добавлены название отрасли и подсказка).
 
 ## Контракт
 
@@ -65,6 +65,44 @@ pnpm typecheck · pnpm lint · pnpm test · pnpm test:integration · pnpm i18n:c
 ## Success Criteria
 
 Все проверки из раздела Commands зелёные; сценарий «регистрация как Другой бизнес → доп. поле → лид с полем → AI без вопросов о районе» проходит в интеграционном тесте.
+
+## Каталог отраслей (ADR-025)
+
+**Статус:** реализовано 2026-10-23, решение — [ADR-025](../discovery/decisions.md#adr-025-каталог-отраслевых-шаблонов-выбор-отрасли-настраивает-компанию). Расширяет контракт выше, ничего не удаляет.
+
+**Цель:** выбор отрасли при регистрации или в настройках сам настраивает компанию — поля лида, названия итогов, примеры и подсказки AI.
+
+**shared:** `industries.ts` — `INDUSTRIES`, `IndustrySchema`, `INDUSTRY_TEMPLATES`, `INDUSTRY_CATALOG_VERSION`, `resolveIndustry(raw, preset)`, `presetForIndustry`, `planIndustryTemplate(template, {leadFields, statusLabels}, {overwriteStatusLabels})`, `exampleLeadAttributes(defs, industry, locale)`. `OrgLeadConfig.industry`; `RegisterOrganizationSchema.industry?`; `UpdateOrganizationSchema.industry?`; `ApplyIndustryTemplateSchema`/`ApplyIndustryTemplateResponse`. Аудит: `ORG_INDUSTRY_CHANGED`, `ORG_INDUSTRY_TEMPLATE_APPLIED`.
+
+**Prisma:** `Organization.industry VARCHAR(32) DEFAULT 'REAL_ESTATE'`, миграция `20261023090000_org_industry` (аддитивная; `GENERIC` → `OTHER`). `industryPreset` записывается вместе с отраслью и вычисляется из неё.
+
+| Метод | Путь | Право | Ответ |
+|---|---|---|---|
+| POST | `/auth/register-organization` (+`industry`) | публичный | шаблон отрасли сразу в `leadFields`/`statusLabels` |
+| PATCH | `/organization` (+`industry`) | `org.manage` (OWNER) | `OrganizationDto`; поля не меняются |
+| POST | `/organization/industry-template` `{industry, overwriteStatusLabels?=false}` | `org.manage` (OWNER) | 200 `{organization, addedFields, skippedFields, statusLabelsChanged}` |
+
+**Правила слияния:** поля шаблона добавляются, если ключа ещё нет (без учёта регистра) и есть место до 8; существующие определения и значения `Lead.attributes` не меняются; пустые названия `WON`/`LOST` заполняются, свои — только с `overwriteStatusLabels`. Повторное применение — no-op.
+
+| Код | Поля шаблона | Итоги WON / LOST (ru) |
+|---|---|---|
+| `REAL_ESTATE` | — (встроенные район, тип объекта, комнаты) | по умолчанию |
+| `DENTAL_CLINIC` | service, preferredTime, visitType | Записан / Не записался |
+| `MEDICAL_CLINIC` | direction, preferredTime, visitType | Записан / Не записался |
+| `BEAUTY_SALON` | service, preferredTime, master | Записан / Не записался |
+| `EDUCATION` | course, studentAge, format, level | Записан на курс / Не записался |
+| `AUTO` | requestType, carModel, carYear, paymentMethod | Продано / записан / Отказ |
+| `CONSTRUCTION_RENOVATION` | workType, objectType, area, timeline | Договор заключён / Отказ |
+| `TOURISM` | tripType, destination, travelDates, travelers | Тур продан / Отказ |
+| `B2B_SERVICES` | serviceType, companySize, position | Договор подписан / Отказ |
+| `RETAIL_ECOMMERCE` | product, quantity, delivery, paymentMethod | Заказ оформлен / Отменён |
+| `OTHER` | — | по умолчанию |
+
+**Веб:** регистрация — список отраслей и блок «Что будет настроено»; «Настройки → Компания → Тип бизнеса» — превью слияния, «Применить шаблон» и «Сменить тип без полей», переключатель замены своих названий итогов; «API-ключи» — пример запроса из отрасли и реальных ключей полей; форма лида — подсказки из примера отрасли.
+
+**AI:** `lead-analysis-generic@2`, `reply-draft-generic@2` — название отрасли и подсказка из каталога (статический английский текст, не данные клиента); код отрасли входит в хэш кэша.
+
+**Тесты:** shared — целостность каталога, `planIndustryTemplate`, `exampleLeadAttributes`, схемы; api unit — отрасль в промптах; api integration (`industry-templates.test.ts`) — регистрация `DENTAL_CLINIC`, устаревший `GENERIC` → `OTHER`, слияние без удаления, лимит, замена названий только по подтверждению, доступ (только OWNER, 401/403/400), изоляция тенантов; маршрут автоматически входит в `access-matrix.test.ts`; web — список отраслей при регистрации, превью и применение шаблона, пример API из полей организации, подсказки формы лида.
 
 ## Вне объёма
 

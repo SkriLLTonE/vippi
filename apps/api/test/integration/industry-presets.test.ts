@@ -96,14 +96,14 @@ describe('Industry preset (ADR-024, slice 1)', () => {
     const lead = await createLead(owner, { message: '2 xonali kvartira kerak, Yunusobod, 60 000$ gacha' });
     const res = await owner.post(`/leads/${lead.id}/ai/analysis`, {});
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ source: 'RULE_BASED', promptVersion: 'lead-analysis-generic@1' });
+    expect(res.body).toMatchObject({ source: 'RULE_BASED', promptVersion: 'lead-analysis-generic@2' });
     const a = res.body.result;
     expect(a).toMatchObject({ district: null, propertyType: null, rooms: null, budget: { amount: 60000, currency: 'USD' } });
     expect(JSON.stringify(a.nextQuestions)).not.toMatch(/район|комнат|tuman|xona/i);
 
     const draft = await owner.post(`/leads/${lead.id}/ai/reply-draft`, { language: 'ru', tone: 'FORMAL' });
     expect(draft.status).toBe(200);
-    expect(draft.body.promptVersion).toBe('reply-draft-generic@1');
+    expect(draft.body.promptVersion).toBe('reply-draft-generic@2');
     expect(draft.body.result.text).not.toMatch(/район|комнат|квартир/i);
 
     const apply = await owner.post(`/leads/${lead.id}/ai/apply-fields`, { insightId: res.body.insightId, fields: ['district', 'rooms'] });

@@ -4,7 +4,8 @@ import { INDUSTRY_PRESETS, ROLES } from '../enums.js';
 import type { FeatureFlags } from '../features.js';
 import type { Permission } from '../permissions.js';
 import { emailSchema, localeSchema, passwordSchema } from './common.js';
-import { StatusLabelsSchema, type OrgLeadConfig } from './org-config.js';
+import { IndustrySchema } from '../industries.js';
+import { StatusLabelsSchema, type OrgLeadConfig, type OverridableStatus } from './org-config.js';
 
 const nameSchema = z
   .string()
@@ -20,6 +21,9 @@ export const RegisterOrganizationSchema = z
     email: emailSchema,
     password: passwordSchema,
     locale: localeSchema.optional(),
+    /** ADR-025: seeds template fields and status labels; takes precedence over `industryPreset`. */
+    industry: IndustrySchema.optional(),
+    /** Legacy (ADR-024): REAL_ESTATE → REAL_ESTATE, GENERIC → OTHER. */
     industryPreset: z.enum(INDUSTRY_PRESETS).optional(),
   })
   .strict()
@@ -79,11 +83,31 @@ export const UpdateOrganizationSchema = z
     /** Notification email From address; null clears. Display name always uses organization name. */
     emailFrom: emailSchema.nullable().optional(),
     aiExternalProcessingEnabled: z.boolean().optional(),
+    /** ADR-025: changes the industry only (fields are merged via `POST /organization/industry-template`). */
+    industry: IndustrySchema.optional(),
+    /** Legacy (ADR-024); ignored when `industry` is present. */
     industryPreset: z.enum(INDUSTRY_PRESETS).optional(),
     statusLabels: StatusLabelsSchema.optional(),
   })
   .strict();
 export type UpdateOrganizationRequest = z.infer<typeof UpdateOrganizationSchema>;
+
+/** ADR-025: switch industry and merge its template (adds missing fields, never removes). */
+export const ApplyIndustryTemplateSchema = z
+  .object({
+    industry: IndustrySchema,
+    /** Replace customized WON/LOST labels with the template ones. */
+    overwriteStatusLabels: z.boolean().default(false),
+  })
+  .strict();
+export type ApplyIndustryTemplateRequest = z.input<typeof ApplyIndustryTemplateSchema>;
+
+export interface ApplyIndustryTemplateResponse {
+  organization: OrganizationDto;
+  addedFields: string[];
+  skippedFields: string[];
+  statusLabelsChanged: OverridableStatus[];
+}
 
 export const CreateApiKeySchema = z
   .object({ name: z.string().trim().min(2, { message: 'too_short' }).max(50) })
@@ -152,9 +176,17 @@ export interface ApiKeyDto {
   createdBy: { id: string; fullName: string } | null;
   lastUsedAt: string | null;
   revokedAt: string | null;
+  /** Last 3 characters of the key; null for keys created before encryption at rest. */
+  last3: string | null;
+  /** The full key is stored encrypted and can be revealed/copied (POST /api-keys/:id/reveal). */
+  revealable: boolean;
 }
 
 export interface CreatedApiKeyDto extends ApiKeyDto {
+  key: string;
+}
+
+export interface RevealedApiKeyDto {
   key: string;
 }
 

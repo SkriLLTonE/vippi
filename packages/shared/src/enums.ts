@@ -100,12 +100,16 @@ export const AUDIT_ACTIONS = [
   'SLA_POLICY_UPDATED',
   'API_KEY_CREATED',
   'API_KEY_REVOKED',
+  'API_KEY_REVEALED',
+  'API_KEY_ROTATED',
   'CSV_IMPORTED',
   'LEADS_EXPORTED',
   'LEAD_DELETED',
   'LEAD_REASSIGNED',
   'ORG_INDUSTRY_PRESET_CHANGED',
   'LEAD_FIELDS_UPDATED',
+  'ORG_INDUSTRY_CHANGED',
+  'ORG_INDUSTRY_TEMPLATE_APPLIED',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -117,6 +121,9 @@ export type ReplyTone = (typeof REPLY_TONES)[number];
 
 export const ORG_TIMEZONE = 'Asia/Tashkent';
 
-/** Industry preset of an organization (ADR-024): only changes visible lead fields and AI prompts. */
+/**
+ * Industry preset of an organization (ADR-024): only changes visible lead fields and AI prompts.
+ * Derived from the catalog industry code (ADR-025, `industries.ts`).
+ */
 export const INDUSTRY_PRESETS = ['REAL_ESTATE', 'GENERIC'] as const;
 export type IndustryPreset = (typeof INDUSTRY_PRESETS)[number];

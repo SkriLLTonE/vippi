@@ -1,4 +1,5 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
+import { INDUSTRIES } from '@vippi/shared';
 import { describe, expect, it } from 'vitest';
 import { apiError, makeMe, mockApi, renderWithProviders } from '../../../../test/utils';
 import { RegisterPage } from './register-page';
@@ -55,8 +56,33 @@ describe('RegisterPage (FR-001)', () => {
       organizationName: 'Test Agency',
       email: 'owner@example.test',
       locale: 'ru',
-      industryPreset: 'REAL_ESTATE',
+      industry: 'REAL_ESTATE',
     });
+  });
+
+  it('lists the industry catalog and shows what a template configures (ADR-025)', async () => {
+    const { calls } = mockApi({
+      'POST /auth/register-organization': () => ({ status: 201, body: makeMe('OWNER') }),
+    });
+    const { user } = renderWithProviders(<RegisterPage />, {
+      path: '/register',
+      me: null,
+      extraRoutes: [{ path: '/leads', element: <p>leads page</p> }],
+    });
+    const select = screen.getByLabelText('Тип бизнеса');
+    expect(within(select).getAllByRole('option')).toHaveLength(INDUSTRIES.length);
+    expect(screen.getByTestId('industry-summary')).toHaveTextContent('Поля: район, тип объекта, комнаты');
+
+    await user.selectOptions(select, 'Салон красоты');
+    const summary = screen.getByTestId('industry-summary');
+    expect(summary).toHaveTextContent('Поля лида: Услуга, Удобное время, Мастер');
+    expect(summary).toHaveTextContent('Итоги: «Записан» / «Не записался»');
+
+    await fill(user);
+    await user.click(screen.getByRole('button', { name: 'Создать компанию' }));
+    expect(await screen.findByText('leads page')).toBeInTheDocument();
+    expect(calls[0]?.body).toMatchObject({ industry: 'BEAUTY_SALON' });
+    expect(calls[0]?.body).not.toHaveProperty('industryPreset');
   });
 
   it('registers a non-real-estate business (ADR-024)', async () => {
@@ -70,8 +96,9 @@ describe('RegisterPage (FR-001)', () => {
     });
     await fill(user);
     await user.selectOptions(screen.getByLabelText('Тип бизнеса'), 'Другой бизнес');
+    expect(screen.getByTestId('industry-summary')).toHaveTextContent('Готовых полей нет');
     await user.click(screen.getByRole('button', { name: 'Создать компанию' }));
     expect(await screen.findByText('leads page')).toBeInTheDocument();
-    expect(calls[0]?.body).toMatchObject({ industryPreset: 'GENERIC' });
+    expect(calls[0]?.body).toMatchObject({ industry: 'OTHER' });
   });
 });

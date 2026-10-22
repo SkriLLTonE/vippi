@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
+  INDUSTRY_TEMPLATES,
   permissionsFor,
   type ChangePasswordRequest,
   type LoginRequest,
@@ -19,7 +20,7 @@ import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { ProductEvents } from '../../common/product-events.js';
 import type { ReqMeta } from '../../common/req-meta.js';
 import { AuditService } from '../audit/audit.service.js';
-import { toOrgLeadConfig } from '../organizations/organizations.service.js';
+import { registrationIndustry, toOrgLeadConfig } from '../organizations/organizations.service.js';
 import { PasswordService } from './password.service.js';
 import { SessionsService } from './sessions.service.js';
 
@@ -52,10 +53,20 @@ export class AuthService {
     if (await this.emailTaken(input.email)) throw emailTaken();
     const passwordHash = await this.passwords.hash(input.password);
     const locale = input.locale ?? 'ru';
+    const industry = registrationIndustry(input);
+    const template = INDUSTRY_TEMPLATES[industry];
     try {
       const result = await this.prisma.db.$transaction(async (tx) => {
+        // ADR-025: the chosen industry seeds its template fields and status labels.
         const org = await tx.organization.create({
-          data: { name: input.organizationName, defaultLocale: locale, industryPreset: input.industryPreset ?? 'REAL_ESTATE' },
+          data: {
+            name: input.organizationName,
+            defaultLocale: locale,
+            industry,
+            industryPreset: template.preset,
+            leadFieldDefs: template.fields as unknown as Prisma.InputJsonValue,
+            statusLabels: template.statusLabels as Prisma.InputJsonValue,
+          },
         });
         const user = await tx.user.create({
           data: { email: input.email, passwordHash, fullName: input.fullName, locale, lastLoginAt: this.clock.now() },
@@ -79,7 +90,7 @@ export class AuthService {
       this.events.emit(
         'org_registered',
         { organizationId: result.orgId, userId: result.userId },
-        { industryPreset: input.industryPreset ?? 'REAL_ESTATE' },
+        { industryPreset: template.preset, industry },
       );
       return { token: result.token, me: await this.me(result.userId, result.orgId, 'OWNER') };
     } catch (e) {

@@ -17,9 +17,12 @@ import {
   type ReplyDraft,
   type ReplyDraftRequest,
   type WeeklySummary,
+  INDUSTRY_TEMPLATES,
   localizedLabel,
   parseLeadFieldDefs,
+  resolveIndustry,
   visibleAttributes,
+  type Industry,
   type IndustryPreset,
   type LeadFieldDef,
 } from '@vippi/shared';
@@ -46,6 +49,7 @@ import {
   promptVersion,
   replyDraftPrompt,
   weeklySummaryPrompt,
+  type IndustryHint,
 } from './prompts/prompts.js';
 import type { LeadWithRelations } from '../leads/domain/lead-mapper.js';
 import { AI_PROVIDER, AiProviderError, type AiProvider } from './providers/ai-provider.interface.js';
@@ -79,6 +83,9 @@ interface RunSpec<T> {
 interface OrgAiContext {
   name: string;
   preset: IndustryPreset;
+  industry: Industry;
+  /** ADR-025: catalog name + hint for generic prompts; null for OTHER. */
+  industryHint: IndustryHint | null;
   fields: LeadFieldDef[];
 }
 
@@ -267,9 +274,16 @@ export class AiService {
   private async orgContext(orgId: string): Promise<OrgAiContext> {
     const org = await this.prisma.db.organization.findUniqueOrThrow({
       where: { id: orgId },
-      select: { name: true, industryPreset: true, leadFieldDefs: true },
+      select: { name: true, industry: true, industryPreset: true, leadFieldDefs: true },
     });
-    return { name: org.name, preset: org.industryPreset, fields: parseLeadFieldDefs(org.leadFieldDefs) };
+    const industry = resolveIndustry(org.industry, org.industryPreset);
+    return {
+      name: org.name,
+      preset: org.industryPreset,
+      industry,
+      industryHint: INDUSTRY_TEMPLATES[industry].ai,
+      fields: parseLeadFieldDefs(org.leadFieldDefs),
+    };
   }
 
   /** Labels of custom fields that have no value on the lead yet (GENERIC hints, no customer data). */
@@ -309,8 +323,8 @@ export class AiService {
       spec = {
         ...common,
         version: promptVersion(genericLeadAnalysisPrompt),
-        hashInput: { ...promptInput, budget: lead.budgetAmount?.toString() ?? null, fields, missingFields },
-        system: genericLeadAnalysisPrompt.system(locale, fields),
+        hashInput: { ...promptInput, budget: lead.budgetAmount?.toString() ?? null, fields, missingFields, industry: ctx.industry },
+        system: genericLeadAnalysisPrompt.system(locale, fields, ctx.industryHint),
         normalize: withoutRealEstateFields,
         fallback: () => ruleBasedAnalysis({ ...ruleInput, missingFields }, locale, 'GENERIC'),
       };
@@ -436,9 +450,9 @@ export class AiService {
       locale: req.language,
       params: { tone: req.tone, language: req.language },
       version: promptVersion(genericReplyDraftPrompt),
-      hashInput: { ...promptInput, missingFields },
+      hashInput: { ...promptInput, missingFields, industry: org.industry },
       schema: ReplyDraftSchema,
-      system: genericReplyDraftPrompt.system(req.language),
+      system: genericReplyDraftPrompt.system(req.language, org.industryHint),
       user: genericReplyDraftPrompt.user(promptInput),
       inputChars: message.length,
       maxOutputTokens: 600 + THINKING_HEADROOM_TOKENS,

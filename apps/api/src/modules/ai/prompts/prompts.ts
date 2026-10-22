@@ -96,16 +96,33 @@ function businessFields(fields: readonly BusinessFieldHint[]): string {
   ].join('\n');
 }
 
+/** ADR-025: industry from the catalog (static English text, never customer data). */
+export interface IndustryHint {
+  name: string;
+  hint: string;
+}
+
+function businessRole(industry: IndustryHint | null): string {
+  return industry
+    ? `the sales team of a ${industry.name} in Uzbekistan`
+    : 'the sales team of a business in Uzbekistan (any industry: services, clinics, education, retail, B2B)';
+}
+
+function industryGuidance(industry: IndustryHint | null): string {
+  return industry ? `Industry guidance: ${industry.hint}` : '';
+}
+
 export const genericLeadAnalysisPrompt = {
   id: 'lead-analysis-generic',
-  version: 1,
-  system(locale: Locale, fields: readonly BusinessFieldHint[] = []): string {
+  version: 2,
+  system(locale: Locale, fields: readonly BusinessFieldHint[] = [], industry: IndustryHint | null = null): string {
     return [
-      'You are an assistant of the sales team of a business in Uzbekistan (any industry: services, clinics, education, retail, B2B).',
+      `You are an assistant of ${businessRole(industry)}.`,
       'Summarize the customer request, describe in "need" what the customer wants and estimate deal likelihood (0-100).',
       'The request may be in Russian, Uzbek (Latin or Cyrillic script) or a mix; "language" is "mixed" when Russian and Uzbek are combined.',
       GENERIC_DATA_RULES,
       'Budget amount must be an integer in the given currency: "60 000$" → 60000 USD, "70k$" → 70000 USD, "40 ming dollar" → 40000 USD, "800 mln" → 800000000 UZS, "1,2 млрд сум" → 1200000000 UZS.',
+      industryGuidance(industry),
       businessFields(fields),
       `Write summary, need, missingInfo, reasons and nextQuestions in ${LANG_NAME[locale]}.`,
     ]
@@ -128,11 +145,12 @@ export interface GenericReplyPromptInput {
 
 export const genericReplyDraftPrompt = {
   id: 'reply-draft-generic',
-  version: 1,
-  system(language: Locale): string {
+  version: 2,
+  system(language: Locale, industry: IndustryHint | null = null): string {
     return [
-      'You write a first reply draft from a sales manager of a business in Uzbekistan to a new customer request.',
+      `You write a first reply draft from a sales manager of ${industry ? `a ${industry.name}` : 'a business'} in Uzbekistan to a new customer request.`,
       GENERIC_DATA_RULES,
+      industryGuidance(industry),
       `Write in ${LANG_NAME[language]}, whatever the language of the request.${
         language === 'uz'
           ? ' Use Latin script only (no Cyrillic letters at all, names are already given in Latin) and the polite "Siz" form.'
@@ -143,7 +161,9 @@ export const genericReplyDraftPrompt = {
       'Do NOT promise prices, discounts, availability or deadlines that are not present in the input. No links. No payment requests.',
       'Maximum 700 characters. Plain text, no markdown.',
       'Tone: FORMAL = business-polite; FRIENDLY = warm but respectful.',
-    ].join('\n');
+    ]
+      .filter(Boolean)
+      .join('\n');
   },
   user(input: GenericReplyPromptInput): string {
     const { lead, ...rest } = input;

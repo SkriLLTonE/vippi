@@ -30,6 +30,7 @@ export function makeMe(role: Role = 'OWNER', overrides: Partial<MeResponse> = {}
       isDemo: false,
       aiExternalProcessingEnabled: false,
       timezone: 'Asia/Tashkent',
+      industry: 'REAL_ESTATE',
       industryPreset: 'REAL_ESTATE',
       leadFields: [],
       statusLabels: {},

@@ -1,14 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  INDUSTRY_PRESETS,
-  RegisterOrganizationSchema,
-  type MeResponse,
-  type RegisterOrganizationRequest,
-} from '@vippi/shared';
-import { useForm } from 'react-hook-form';
+import { RegisterOrganizationSchema, type MeResponse, type RegisterOrganizationRequest } from '@vippi/shared';
+import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router';
+import { IndustryOptions, IndustrySummary } from '@/entities/industry';
 import { setSession } from '@/entities/session';
 import { LocaleSwitch } from '@/features/locale-switch';
 import { apiRequest, isApiError } from '@/shared/api';
@@ -26,13 +22,14 @@ export function RegisterPage() {
     resolver: zodResolver(RegisterOrganizationSchema),
     defaultValues: {
       organizationName: '',
-      industryPreset: 'REAL_ESTATE',
+      industry: 'REAL_ESTATE',
       fullName: '',
       email: '',
       password: '',
       locale: currentLocale(),
     },
   });
+  const industry = useWatch({ control: form.control, name: 'industry' }) ?? 'REAL_ESTATE';
   const register = useMutation({
     mutationFn: (body: RegisterInput) =>
       apiRequest<MeResponse>('/auth/register-organization', { method: 'POST', body }),
@@ -74,17 +71,14 @@ export function RegisterPage() {
         <Field label={t('auth.organizationName')} error={err('organizationName')}>
           {(c) => <Input {...c} autoComplete="organization" autoFocus {...form.register('organizationName')} />}
         </Field>
-        <Field label={t('industry.label')} hint={t('industry.registerHint')} error={err('industryPreset')}>
+        <Field label={t('industry.label')} hint={t('industry.registerHint')} error={err('industry')}>
           {(c) => (
-            <NativeSelect {...c} {...form.register('industryPreset')}>
-              {INDUSTRY_PRESETS.map((p) => (
-                <option key={p} value={p}>
-                  {t(`industry.preset.${p}`)}
-                </option>
-              ))}
+            <NativeSelect {...c} {...form.register('industry')}>
+              <IndustryOptions />
             </NativeSelect>
           )}
         </Field>
+        <IndustrySummary industry={industry} />
         <Field label={t('auth.fullName')} error={err('fullName')}>
           {(c) => <Input {...c} autoComplete="name" {...form.register('fullName')} />}
         </Field>

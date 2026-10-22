@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Currency, IndustryPreset, LeadStatus, Locale } from '../enums.js';
 import { CURRENCIES } from '../enums.js';
+import type { Industry } from '../industries.js';
 
 // ---------------------------------------------------------------- localized labels
 
@@ -204,6 +205,8 @@ export function parseStatusLabels(raw: unknown): StatusLabels {
 
 /** Organization-level lead configuration shared by `/auth/me` and `/organization`. */
 export interface OrgLeadConfig {
+  /** ADR-025: catalog code; `industryPreset` is derived from it. */
+  industry: Industry;
   industryPreset: IndustryPreset;
   leadFields: LeadFieldDef[];
   statusLabels: StatusLabels;

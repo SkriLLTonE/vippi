@@ -147,6 +147,8 @@ model Organization {
   emailFrom                   String?  @db.VarChar(254)
   aiExternalProcessingEnabled Boolean  @default(false)
   industryPreset              IndustryPreset @default(REAL_ESTATE)
+  /// ADR-025: industry catalog code (`INDUSTRIES` in @vippi/shared); `industryPreset` is derived from it on write.
+  industry                    String   @default("REAL_ESTATE") @db.VarChar(32)
   /// Custom lead field definitions (≤ 8), validated by `LeadFieldDefSchema` from @vippi/shared.
   leadFieldDefs               Json     @default("[]")
   /// Per-organization WON/LOST labels (`StatusLabelsSchema`); status codes never change.
@@ -257,6 +259,9 @@ model ApiKey {
   name           String    @db.VarChar(50)
   prefix         String    @db.VarChar(16)
   keyHash        String    @unique @db.Char(64)
+  /// AES-256-GCM sealed full key (`v1.<iv>.<tag>.<data>`); null for keys created before encryption at rest.
+  keyCiphertext  String?
+  keyLast3       String?   @db.VarChar(3)
   createdById    String?   @db.Uuid
   lastUsedAt     DateTime? @db.Timestamptz(3)
   revokedAt      DateTime? @db.Timestamptz(3)

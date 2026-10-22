@@ -1,6 +1,6 @@
 /**
  * FR-095 demo seed: synthetic organizations "Demo Realty Toshkent (DEMO)" (REAL_ESTATE)
- * and "Demo Smile Dental (DEMO)" (GENERIC preset with custom fields, ADR-024).
+ * and "Demo Smile Dental (DEMO)" (DENTAL_CLINIC catalog template, ADR-024/025).
  * All people, phones (+99800… — non-existent operator range) and requests are fictional.
  * Re-running recreates only the demo organization and its demo users; `--if-missing` seeds only when it is absent.
  */
@@ -10,6 +10,7 @@ import argon2 from 'argon2';
 import {
   buildLeadSearchText,
   DISTRICT_CODES,
+  INDUSTRY_TEMPLATES,
   type ContactChannel,
   type LeadSource,
   type LeadStatus,
@@ -126,34 +127,8 @@ export const CLINIC_EMAIL_DOMAIN = 'demo-clinic.example';
 const CLINIC_LEAD_COUNT = 40;
 const CLINIC_DAYS = 14;
 
-const CLINIC_FIELDS = [
-  {
-    key: 'service',
-    label: { ru: 'Услуга', uz: 'Xizmat' },
-    type: 'single_select',
-    required: true,
-    showInCreate: true,
-    options: [
-      { value: 'consultation', label: { ru: 'Консультация', uz: 'Maslahat' } },
-      { value: 'cleaning', label: { ru: 'Чистка', uz: 'Tozalash' } },
-      { value: 'implant', label: { ru: 'Имплант', uz: 'Implant' } },
-      { value: 'braces', label: { ru: 'Брекеты', uz: 'Breketlar' } },
-      { value: 'whitening', label: { ru: 'Отбеливание', uz: 'Oqartirish' } },
-    ],
-  },
-  {
-    key: 'preferredTime',
-    label: { ru: 'Удобное время', uz: 'Qulay vaqt' },
-    type: 'single_select',
-    required: false,
-    showInCreate: true,
-    options: [
-      { value: 'morning', label: { ru: 'Утро', uz: 'Ertalab' } },
-      { value: 'afternoon', label: { ru: 'День', uz: 'Kunduzi' } },
-      { value: 'evening', label: { ru: 'Вечер', uz: 'Kechqurun' } },
-    ],
-  },
-] as const;
+/** ADR-025: fields and status labels come from the catalog's dental template. */
+const CLINIC_TEMPLATE = INDUSTRY_TEMPLATES.DENTAL_CLINIC;
 
 const CLINIC_MESSAGES: ReadonlyArray<{ text: string; service: string; time: string | null }> = [
   { text: 'Здравствуйте, хочу записаться на чистку зубов, удобно утром', service: 'cleaning', time: 'morning' },
@@ -166,7 +141,7 @@ const CLINIC_MESSAGES: ReadonlyArray<{ text: string; service: string; time: stri
   { text: 'Запишите на консультацию в субботу', service: 'consultation', time: 'morning' },
 ];
 
-/** Synthetic dental clinic on the GENERIC preset with custom fields and renamed final statuses. */
+/** Synthetic dental clinic on the DENTAL_CLINIC template (custom fields and renamed final statuses). */
 async function seedClinicDemo(prisma: PrismaClient, hash: string, ifMissing: boolean): Promise<void> {
   if (ifMissing) {
     const existing = await prisma.organization.findFirst({ where: { isDemo: true, name: CLINIC_ORG_NAME }, select: { id: true } });
@@ -195,9 +170,10 @@ async function seedClinicDemo(prisma: PrismaClient, hash: string, ifMissing: boo
           isDemo: true,
           defaultLocale: 'ru',
           aiExternalProcessingEnabled: false,
-          industryPreset: 'GENERIC',
-          leadFieldDefs: CLINIC_FIELDS as unknown as Prisma.InputJsonValue,
-          statusLabels: { WON: { ru: 'Записан', uz: 'Yozildi' }, LOST: { ru: 'Не записался', uz: 'Yozilmadi' } },
+          industry: CLINIC_TEMPLATE.code,
+          industryPreset: CLINIC_TEMPLATE.preset,
+          leadFieldDefs: CLINIC_TEMPLATE.fields as unknown as Prisma.InputJsonValue,
+          statusLabels: CLINIC_TEMPLATE.statusLabels as Prisma.InputJsonValue,
         },
       });
       const ids: Record<string, string> = {};
@@ -297,7 +273,7 @@ async function seedClinicDemo(prisma: PrismaClient, hash: string, ifMissing: boo
       await tx.auditLog.create({
         data: { organizationId: org.id, action: 'ORG_REGISTERED', actorType: 'SYSTEM', metadata: { seed: 'demo-clinic', leads: leads.length } },
       });
-      console.log(`Demo organization "${CLINIC_ORG_NAME}" (GENERIC) created with ${leads.length} synthetic leads.`);
+      console.log(`Demo organization "${CLINIC_ORG_NAME}" (${CLINIC_TEMPLATE.code}) created with ${leads.length} synthetic leads.`);
       for (const u of users) console.log(`  ${u.role.padEnd(13)} ${u.email}`);
     },
     { timeout: 60_000 },

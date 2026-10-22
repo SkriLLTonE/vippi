@@ -1,4 +1,4 @@
-import { LeadAnalysisSchema, ReplyDraftSchema } from '@vippi/shared';
+import { INDUSTRY_TEMPLATES, LeadAnalysisSchema, ReplyDraftSchema } from '@vippi/shared';
 import { describe, expect, it } from 'vitest';
 import { ruleBasedAnalysis } from '../../src/modules/ai/fallback/rules.js';
 import { templateReply } from '../../src/modules/ai/fallback/templates.js';
@@ -77,14 +77,25 @@ describe('prompt versions', () => {
   it('generic prompts have their own cache keys; real-estate prompts are unchanged', () => {
     expect(promptVersion(leadAnalysisPrompt)).toBe('lead-analysis@2');
     expect(promptVersion(replyDraftPrompt)).toBe('reply-draft@2');
-    expect(promptVersion(genericLeadAnalysisPrompt)).toBe('lead-analysis-generic@1');
-    expect(promptVersion(genericReplyDraftPrompt)).toBe('reply-draft-generic@1');
+    expect(promptVersion(genericLeadAnalysisPrompt)).toBe('lead-analysis-generic@2');
+    expect(promptVersion(genericReplyDraftPrompt)).toBe('reply-draft-generic@2');
   });
 
   it('generic system prompt is industry-neutral and lists custom field labels as data', () => {
     const s = genericLeadAnalysisPrompt.system('ru', [{ key: 'service', label: 'Услуга' }]);
-    expect(s).not.toMatch(/real-estate|Tashkent district/i);
+    expect(s).not.toMatch(/real-estate|Tashkent district|Industry guidance/i);
     expect(s).toContain('<business_fields>[{"key":"service","label":"Услуга"}]</business_fields>');
     expect(genericLeadAnalysisPrompt.system('ru')).not.toContain('business_fields>[');
+  });
+
+  it('ADR-025: catalog industry name and hint reach both generic prompts', () => {
+    const { ai } = INDUSTRY_TEMPLATES.DENTAL_CLINIC;
+    const analysis = genericLeadAnalysisPrompt.system('uz', [], ai);
+    expect(analysis).toContain('sales team of a dental clinic in Uzbekistan');
+    expect(analysis).toContain(`Industry guidance: ${ai!.hint}`);
+    const draft = genericReplyDraftPrompt.system('ru', ai);
+    expect(draft).toContain('sales manager of a dental clinic');
+    expect(draft).toContain('Industry guidance:');
+    expect(genericReplyDraftPrompt.system('ru')).not.toContain('\n\n');
   });
 });
