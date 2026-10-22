@@ -29,3 +29,6 @@ Thumbs.db
 
 # Live AI evaluation raw outputs (synthetic, local only)
 apps/api/test/live/results/
+
+# Trial / assignment docs (local only)
+AI_specialist_trial_task.pdf

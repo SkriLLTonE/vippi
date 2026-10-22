@@ -14,7 +14,7 @@
 
 ## Статус
 
-На 2026-10-21 деплой **не выполнен** исполнителем: Render CLI не установлен, `RENDER_API_KEY` не задан, доступа к аккаунту Render нет. Всё подготовлено так, что владелец разворачивает стенд за несколько кликов (ниже). После деплоя URL будет вида `https://vippi-leads.onrender.com` (если имя занято, Render добавит суффикс; фактический адрес — в карточке сервиса).
+На **2026-10-22** стенд **Live**: [https://vippi-leads.onrender.com](https://vippi-leads.onrender.com) (`/api/health/ready` → `ready`). Сервисы Blueprint: `vippi-leads` + `vippi-db`. Пароль демо — `DEMO_SEED_PASSWORD` в Environment у `vippi-leads`. Ниже — шаги на случай пересоздания Blueprint или нового workspace.
 
 ## Шаги развёртывания (делает владелец аккаунта)
 

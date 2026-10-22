@@ -34,13 +34,15 @@ Swagger: `/api/docs` (при `SWAGGER_ENABLED=true`).
 
 ## Публичное демо на Render (free)
 
-Один Docker-сервис отдаёт и сайт, и API на одном домене (cookie-сессии без CORS), база — Render PostgreSQL free ([ADR-022](docs/discovery/decisions.md)). Всё описано в [`render.yaml`](render.yaml). Чтобы развернуть:
+**Публичный стенд:** [https://vippi-leads.onrender.com](https://vippi-leads.onrender.com). Free-тариф засыпает после ~15 мин без трафика (пробуждение ~1 мин) — перед демо откройте URL заранее.
 
-1. Войдите на <https://dashboard.render.com> через **GitHub**.
-2. **New → Blueprint** → репозиторий **SkriLLTonE/vippi** (ветка `main`).
-3. `GEMINI_API_KEY` — необязательно, можно оставить пустым (rule-based AI).
-4. **Apply**. Через ~5–10 мин сервис `vippi-leads` будет **Live**: миграции и синтетический демо-сид выполняются автоматически при первом старте.
-5. Пароль демо-аккаунтов: `vippi-leads` → **Environment** → `DEMO_SEED_PASSWORD` (сгенерирован Render).
+Один Docker-сервис отдаёт и сайт, и API на одном домене (cookie-сессии без CORS), база — Render PostgreSQL free ([ADR-022](docs/discovery/decisions.md)). Blueprint: [`render.yaml`](render.yaml). Переразвернуть / новый workspace:
+
+1. Войдите на <https://dashboard.render.com> через **GitHub** (доступ к `SkriLLTonE/vippi`).
+2. **New → Blueprint** → репозиторий **SkriLLTonE/vippi**, ветка `main`.
+3. Render покажет сервисы `vippi-leads` (web) и `vippi-db` (Postgres). `GEMINI_API_KEY` — необязательно, можно пустым (rule-based AI). Остальные секреты (`DEMO_SEED_PASSWORD`, `DATABASE_URL`) Render задаёт сам.
+4. **Apply**. Через ~5–10 мин `vippi-leads` → **Live**; миграции и демо-сид при первом старте.
+5. Пароль демо: `vippi-leads` → **Environment** → `DEMO_SEED_PASSWORD`.
 
 Переналивка демо-данных, включение Gemini, проверки после деплоя и ограничения free-тарифа описаны в [docs/delivery/deployment.md](docs/delivery/deployment.md):
 - сон после 15 мин простоя;
