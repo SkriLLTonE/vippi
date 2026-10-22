@@ -338,6 +338,7 @@ sequenceDiagram
 | `SlaState` | `PENDING`, `MET`, `BREACHED`, `EXEMPT` |
 | `ContactChannel` | `CALL`, `TELEGRAM`, `INSTAGRAM`, `WHATSAPP`, `SMS`, `EMAIL`, `OTHER` |
 | `Currency` | `UZS`, `USD` |
+| `IndustryPreset` | `REAL_ESTATE`, `GENERIC` (ADR-024) |
 | `PropertyType` | `APARTMENT`, `HOUSE`, `COMMERCIAL`, `LAND`, `OTHER` |
 | `District` (varchar + справочник) | `BEKTEMIR`, `CHILONZOR`, `MIROBOD`, `MIRZO_ULUGBEK`, `OLMAZOR`, `SERGELI`, `SHAYXONTOHUR`, `UCHTEPA`, `YAKKASAROY`, `YANGIHAYOT`, `YASHNOBOD`, `YUNUSOBOD` |
 | `ActivityType` | `CREATED`, `ASSIGNED`, `UNASSIGNED`, `STATUS_CHANGED`, `FIRST_CONTACT`, `COMMENT`, `SLA_BREACHED`, `FIELDS_UPDATED`, `AI_ANALYSIS_GENERATED`, `AI_DRAFT_SENT` |
@@ -357,9 +358,12 @@ sequenceDiagram
 | isDemo | boolean | default false; только сид |
 | aiExternalProcessingEnabled | boolean | default false (ADR-016) |
 | nextLeadNumber | integer | default 1; инкремент в транзакции создания лида |
+| industryPreset | IndustryPreset | `REAL_ESTATE` (default) \| `GENERIC`; ADR-024 |
+| leadFieldDefs | jsonb | default `[]`; до 8 определений своих полей (`LeadFieldDefSchema`, `packages/shared/src/schemas/org-config.ts`) |
+| statusLabels | jsonb | default `{}`; необязательные ru/uz-названия `WON`/`LOST` |
 | createdAt, updatedAt | timestamptz | |
 
-Доступ: чтение — все участники; изменение — owner. Не тенантная (сама является тенантом).
+Доступ: чтение — все участники; изменение — owner (свои поля лида — owner и head_of_sales, право `leadFields.manage`). Не тенантная (сама является тенантом).
 
 ### 10.3. User
 | Поле | Тип | Ограничения |
@@ -450,6 +454,7 @@ sequenceDiagram
 | district | varchar(32) | NULL, код из справочника |
 | propertyType | PropertyType | NULL |
 | rooms | smallint | NULL, 1–10 |
+| attributes | jsonb | default `{}`; значения своих полей организации по ключам определений; проверяются в сервисе схемой, построенной по `Organization.leadFieldDefs` (ADR-024) |
 | status | LeadStatus | default NEW |
 | lostReason | LostReason | NULL; CHECK: NOT NULL ⇔ status=LOST |
 | lostComment | varchar(500) | NULL; обязателен при `OTHER` |
@@ -481,6 +486,15 @@ sequenceDiagram
 - GIN `searchText gin_trgm_ops` — поиск ILIKE.
 
 Доступ: по матрице PRD §14; manager — `assigneeId = me OR assigneeId IS NULL`.
+
+**Поля по пресету (ADR-024).** `district`, `propertyType`, `rooms` относятся к пресету `REAL_ESTATE`. В `GENERIC` они не показываются в вебе и не заполняются AI, но API их по-прежнему принимает, а сохранённые значения не стираются. `budget*` доступен в обоих пресетах.
+
+**`attributes`:**
+- Типы значений: `text` — строка 1..500; `number` — число; `money` — `{amount: digits, currency}`; `single_select` — значение одного из вариантов.
+- Неизвестный ключ → 400 `VALIDATION_FAILED`, `details[].code = unknown_field`, `path = attributes.<key>`. Неверное значение → `invalid_value`, отсутствующее обязательное → `required`.
+- `required` проверяется при `POST /leads` и `PATCH /leads/{id}`, но не в intake API и CSV-импорте.
+- В `PATCH` передаётся частичный объект: `null` очищает значение.
+- В ответе возвращаются только ключи активных определений: значения удалённых полей хранятся, но скрыты.
 
 ### 10.9. LeadActivity (история и комментарии)
 | Поле | Тип | Ограничения |
@@ -652,7 +666,11 @@ sequenceDiagram
 | GET `/sla-policy` · PUT `/sla-policy` | Политика | O H | FR-030, FR-031 |
 | GET `/notifications` · GET `/notifications/unread-count` | Список · счётчик | O H M (свои) | FR-041 |
 | POST `/notifications/{id}/read` · POST `/notifications/read-all` | Прочтение | O H M (свои) | FR-041 |
+| GET · PATCH `/notifications/settings` | Каналы, VAPID-ключ, email opt-in | O H M (свои) | FR-042 |
+| POST `/notifications/push-subscriptions` · POST `/notifications/push-subscriptions/remove` | Подписка браузера на Web Push | O H M (свои) | FR-042 |
+| POST `/notifications/test` | Тестовое уведомление (5 за 10 мин) | O H M (свои) | FR-042 |
 | GET `/analytics/dashboard` | Дашборд | O H | FR-050–FR-054 |
+| GET `/analytics/me` | Моя статистика + среднее по команде | O H M (свои) | FR-056 |
 | GET `/leads/{id}/ai` | Последние AI-результаты лида | O H M (вид.) | FR-070 |
 | POST `/leads/{id}/ai/analysis` | AI-001 + AI-002 | O H M (вид.) | FR-070 |
 | POST `/leads/{id}/ai/reply-draft` | AI-003 | O H M (вид.) | FR-071 |
@@ -759,6 +777,26 @@ sequenceDiagram
 ```
 - Реализация: один `$queryRaw` на блок с `percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch from firstResponseAt - receivedAt))`, границы — `(date AT TIME ZONE 'Asia/Tashkent')`. Деление на ноль → `null`.
 
+#### GET `/analytics/me` (FR-056)
+- Право `stats.self.read` (owner, head_of_sales, manager). Query (strict): `preset: 'today'|'7d'|'30d'` — обязателен; параметра пользователя нет, субъект — всегда текущий актор (`assigneeId`/`userId` → 400).
+- Response 200 (`MyStatsResponse`):
+```ts
+type MyStatsKpis = {
+  received: number; inWork: number; closed: number;   // inWork = received − closed; closed = WON + LOST
+  medianFirstResponseSeconds: number | null;
+  slaMetRate: number | null; breached: number;          // MET/(MET+BREACHED), как FR-051
+  won: number; conversionRate: number | null;           // WON/received
+};
+{
+  period: { from; to; timezone: 'Asia/Tashkent' },
+  me: MyStatsKpis,
+  team: { size: number; average: MyStatsKpis | null },  // null, если size < 3 (MY_STATS_MIN_TEAM_SIZE)
+  daily: Array<{ date; leads; breached; teamAverageLeads: number | null }>
+}
+```
+- Команда = активные `MANAGER` ∪ все `assigneeId` с лидами за период (как строки FR-052 без «Не назначен»). Среднее: счётчики — по всем участникам, доли и медиана — по участникам, у которых они определены.
+- Реализация: тот же агрегат, что у дашборда, сгруппированный по `assigneeId` (+ колонка `closed`), список активных менеджеров и дневной агрегат с `FILTER` по актору и по назначенным — 3 запроса параллельно, без N+1. В ответе нет id и имён коллег.
+
 #### POST `/leads/{id}/ai/analysis` (FR-070, AI-001, AI-002)
 - Request: `{ force?: boolean }` (`force` — игнорировать кэш; учитывается в лимитах).
 - Response 200 `AiResultEnvelope<LeadAnalysis>`:
@@ -776,7 +814,16 @@ sequenceDiagram
 - Request: `{ insightId: uuid, channel: ContactChannel, edited: boolean }`. Если нет первого контакта — выполняется логика `/first-contact` в той же транзакции. Активность `AI_DRAFT_SENT`. Текст черновика не передаётся и не хранится повторно.
 
 #### POST `/leads/{id}/ai/apply-fields` (FR-072)
-- Request: `{ insightId: uuid, fields: Array<'budget'|'district'|'propertyType'|'rooms'> (1..4) }`. Значения берутся из `AiInsight.output` (не от клиента). Активность `FIELDS_UPDATED` с `source: 'AI'|'RULES'`.
+- Request: `{ insightId: uuid, fields: Array<'budget'|'district'|'propertyType'|'rooms'> (1..4) }`. Значения берутся из `AiInsight.output` (не от клиента). Активность `FIELDS_UPDATED` с `source: 'AI'|'RULES'`. В организации `GENERIC` применяется только `budget` (ADR-024).
+
+#### Настройки лидов организации (ADR-024)
+- `POST /auth/register-organization` принимает необязательный `industryPreset` (по умолчанию `REAL_ESTATE`). `GET /auth/me` и `GET /organization` возвращают `industryPreset`, `leadFields` и `statusLabels`.
+- `PATCH /organization` принимает `{ industryPreset?, statusLabels? }`, доступен только owner. Смена пресета пишется в аудит как `ORG_INDUSTRY_PRESET_CHANGED {from, to}`; изменение названий — как `ORG_SETTINGS_UPDATED {fields}`.
+- `GET /lead-fields` (все роли) и `POST /lead-fields`, `PATCH /lead-fields/{key}`, `DELETE /lead-fields/{key}` (owner и head_of_sales):
+  - Ключ и тип неизменяемы.
+  - Повторный ключ → 409 `CONFLICT`; девятое поле → 422 `LEAD_FIELDS_LIMIT`.
+  - Каждое изменение пишется в аудит как `LEAD_FIELDS_UPDATED {op, key}`.
+- `GET /leads/export.csv` выдаёт после фиксированных колонок по одной колонке `attr:<key>` на каждое активное своё поле.
 
 #### POST `/analytics/weekly-summary` (FR-074, AI-004)
 - Request: `{}` (период — последние 7 полных дней + сегодня по Ташкенту) → 200 `AiResultEnvelope<WeeklySummary>`.
@@ -887,6 +934,9 @@ export interface AiProvider {
 - Пользовательская часть: `<lead_data>{JSON.stringify({source, message, name})}</lead_data>` — JSON-экранирование исключает «закрытие» тега текстом заявки; телефон не передаётся.
 - Черновик: дополнительно `companyName`, `managerFirstName`, `language`, `tone`, `analysis` (если есть); правила AI-003 (латиница для `uz`, «Siz», без цен/скидок/сроков вне входных данных, без ссылок, ≤700 символов).
 - Сводка за неделю: только агрегаты `analytics` (JSON), правило «используй только числа из входных данных».
+- **Пресет `GENERIC` (ADR-024):** отдельные шаблоны `lead-analysis-generic@1` и `reply-draft-generic@1`; шаблоны недвижимости не меняются, поэтому их кэш остаётся валидным.
+  - Роль — «ассистент отдела продаж компании в Узбекистане». Поля `district`, `propertyType`, `rooms` всегда `null`: схема вывода та же, после разбора их обнуляет код.
+  - Названия своих полей передаются блоком `<business_fields>` как JSON с ключом и подписью. Модель спрашивает о незаполненных в `missingInfo` и `nextQuestions`; они же входят в `inputHash`.
 
 ### 17.4. Схемы вывода (Zod, `packages/shared/ai`)
 ```ts
@@ -936,6 +986,12 @@ WeeklySummarySchema = z.object({ bullets: z.array(z.string().min(10).max(200)).m
 **AI-002 (оценка):** база 20; телефон есть +15; бюджет +20; район +10; тип или комнаты +10; длина текста >40 символов +10; источник `WEBSITE`/`PHONE`/`WALK_IN`/`REFERRAL` +10, `INSTAGRAM`/`TELEGRAM`/`OLX` +5; срочность («срочно», «сегодня», «на этой неделе», «tez», «bugun», «shoshilinch») +10; «просто интересуюсь», «shunchaki», «потом» −15; ограничение 0–100. `reasons` — сработавшие правила (2–4 первых по весу; если правил <2 — добавляется «Мало данных в заявке»). `nextQuestions` — вопросы по `missingInfo` (до 3).
 
 **AI-003 (черновик):** шаблоны `ru`/`uz` × `FORMAL`/`FRIENDLY` с подстановками `{name}`, `{companyName}`, `{managerName}`, `{propertyPhrase}` (из типа/комнат/района, если известны) и 1–2 вопросами из `missingInfo`. Пример `uz/FORMAL`: «Assalomu alaykum, {name}! Men {companyName} kompaniyasidan {managerName}. Murojaatingiz uchun rahmat. {propertyPhrase} Iltimos, aniqlashtiring: {question}». (Тексты шаблонов вычитываются носителем — TBD-5.)
+
+**Fallback для `GENERIC` (ADR-024):**
+- Из текста извлекается только бюджет; `district`, `propertyType` и `rooms` равны `null` и не дают баллов в оценке.
+- `missingInfo` содержит подписи незаполненных своих полей и бюджет.
+- `nextQuestions` (до 3): сначала о своих полях, затем об уточнении запроса, если текст короче 40 символов, затем об удобном времени для связи. Вопросов о районе и комнатах нет.
+- Черновик строится без `{propertyPhrase}`.
 
 **AI-004 (сводка):** 3–5 пунктов по шаблону из агрегатов: медиана ответа и сравнение с порогом SLA; доля просрочек; менеджер с наибольшей долей просрочек (если лидов ≥5); источник с наибольшей долей просрочек; число «без реакции сейчас».
 
