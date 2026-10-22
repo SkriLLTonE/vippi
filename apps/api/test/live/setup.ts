@@ -17,6 +17,7 @@ Object.assign(process.env, {
   PUBLIC_APP_URL: 'http://localhost:8080',
   LOG_LEVEL: 'info',
   SLA_CRON_ENABLED: 'false',
+  NOTIFY_DISPATCH_ENABLED: 'false',
   SWAGGER_ENABLED: 'false',
   AI_PROVIDER: process.env.GEMINI_API_KEY ? 'gemini' : 'none',
   AI_USER_HOURLY_LIMIT: '1000',

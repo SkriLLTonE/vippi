@@ -41,12 +41,33 @@ const EnvSchema = z
     AI_DAILY_REQUEST_LIMIT_PER_ORG: z.coerce.number().int().min(0).default(200),
     AI_DAILY_TOKEN_LIMIT_PER_ORG: z.coerce.number().int().min(0).default(300_000),
     AI_USER_HOURLY_LIMIT: z.coerce.number().int().min(0).default(30),
+    /** Outbox that delivers in-app notifications to Web Push and email (ADR-023). */
+    NOTIFY_DISPATCH_ENABLED: bool.default(true),
+    /** Web Push VAPID key pair (`npx web-push generate-vapid-keys`); both empty => push disabled. */
+    VAPID_PUBLIC_KEY: z.string().optional(),
+    VAPID_PRIVATE_KEY: z.string().optional(),
+    /** mailto: or https: contact for push services; defaults to PUBLIC_APP_URL. */
+    VAPID_SUBJECT: z.string().regex(/^(mailto:|https:\/\/)/, 'VAPID_SUBJECT must start with mailto: or https://').optional(),
+    /** SMTP for email notifications; SMTP_HOST or SMTP_FROM empty => email disabled. */
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(587),
+    /** Implicit TLS; defaults to true for port 465 (otherwise STARTTLS is used when offered). */
+    SMTP_SECURE: bool.optional(),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASSWORD: z.string().optional(),
+    SMTP_FROM: z.string().optional(),
+  })
+  .refine((e) => !e.VAPID_PUBLIC_KEY === !e.VAPID_PRIVATE_KEY, {
+    path: ['VAPID_PRIVATE_KEY'],
+    message: 'VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be set together',
   })
   .transform((e) => ({
     ...e,
     COOKIE_SECURE: e.COOKIE_SECURE ?? new URL(e.PUBLIC_APP_URL).protocol === 'https:',
+    SMTP_SECURE: e.SMTP_SECURE ?? e.SMTP_PORT === 465,
     publicOrigin: new URL(e.PUBLIC_APP_URL).origin,
     features: parseDisabledFeatures(e.DISABLED_FEATURES),
+    notifyChannels: { push: !!e.VAPID_PUBLIC_KEY && !!e.VAPID_PRIVATE_KEY, email: !!e.SMTP_HOST && !!e.SMTP_FROM },
   }));
 
 export type AppConfig = z.infer<typeof EnvSchema>;

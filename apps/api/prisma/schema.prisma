@@ -131,6 +131,12 @@ enum AuditActorType {
   SYSTEM
 }
 
+/// ADR-024: changes only visible lead fields and AI prompts; real-estate columns are kept for every preset.
+enum IndustryPreset {
+  REAL_ESTATE
+  GENERIC
+}
+
 model Organization {
   id                          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name                        String   @db.VarChar(100)
@@ -138,43 +144,51 @@ model Organization {
   defaultLocale               String   @default("ru") @db.VarChar(2)
   isDemo                      Boolean  @default(false)
   aiExternalProcessingEnabled Boolean  @default(false)
+  industryPreset              IndustryPreset @default(REAL_ESTATE)
+  /// Custom lead field definitions (≤ 8), validated by `LeadFieldDefSchema` from @vippi/shared.
+  leadFieldDefs               Json     @default("[]")
+  /// Per-organization WON/LOST labels (`StatusLabelsSchema`); status codes never change.
+  statusLabels                Json     @default("{}")
   nextLeadNumber              Int      @default(1)
   createdAt                   DateTime @default(now()) @db.Timestamptz(3)
   updatedAt                   DateTime @updatedAt @db.Timestamptz(3)
 
-  memberships   Membership[]
-  sessions      Session[]
-  invitations   Invitation[]
-  apiKeys       ApiKey[]
-  leads         Lead[]
-  activities    LeadActivity[]
-  slaPolicy     SlaPolicy?
-  notifications Notification[]
-  aiInsights    AiInsight[]
-  auditLogs     AuditLog[]
+  memberships       Membership[]
+  sessions          Session[]
+  invitations       Invitation[]
+  apiKeys           ApiKey[]
+  leads             Lead[]
+  activities        LeadActivity[]
+  slaPolicy         SlaPolicy?
+  notifications     Notification[]
+  pushSubscriptions PushSubscription[]
+  aiInsights        AiInsight[]
+  auditLogs         AuditLog[]
 }
 
 model User {
-  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email        String    @unique @db.Citext
-  passwordHash String
-  fullName     String    @db.VarChar(100)
-  locale       String    @default("ru") @db.VarChar(2)
-  lastLoginAt  DateTime? @db.Timestamptz(3)
-  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
+  id                        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                     String    @unique @db.Citext
+  passwordHash              String
+  fullName                  String    @db.VarChar(100)
+  locale                    String    @default("ru") @db.VarChar(2)
+  emailNotificationsEnabled Boolean   @default(false)
+  lastLoginAt               DateTime? @db.Timestamptz(3)
+  createdAt                 DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt                 DateTime  @updatedAt @db.Timestamptz(3)
 
   membership          Membership?
   sessions            Session[]
-  invitationsSent     Invitation[]   @relation("InvitedBy")
-  invitationsAccepted Invitation[]   @relation("AcceptedUser")
+  invitationsSent     Invitation[]       @relation("InvitedBy")
+  invitationsAccepted Invitation[]       @relation("AcceptedUser")
   apiKeysCreated      ApiKey[]
-  assignedLeads       Lead[]         @relation("LeadAssignee")
-  createdLeads        Lead[]         @relation("LeadCreatedBy")
-  firstResponses      Lead[]         @relation("LeadFirstResponseBy")
+  assignedLeads       Lead[]             @relation("LeadAssignee")
+  createdLeads        Lead[]             @relation("LeadCreatedBy")
+  firstResponses      Lead[]             @relation("LeadFirstResponseBy")
   activities          LeadActivity[]
   slaPoliciesUpdated  SlaPolicy[]
   notifications       Notification[]
+  pushSubscriptions   PushSubscription[]
   aiInsights          AiInsight[]
   auditLogs           AuditLog[]
 }
@@ -267,6 +281,8 @@ model Lead {
   district              String?         @db.VarChar(32)
   propertyType          PropertyType?
   rooms                 Int?            @db.SmallInt
+  /// Values of the organization's custom fields; values of removed definitions are kept (hidden).
+  attributes            Json            @default("{}")
   status                LeadStatus      @default(NEW)
   lostReason            LostReason?
   lostComment           String?         @db.VarChar(500)
@@ -346,6 +362,8 @@ model Notification {
   payload        Json
   dedupeKey      String           @unique @db.VarChar(200)
   readAt         DateTime?        @db.Timestamptz(3)
+  /// Set when the push/email outbox has picked the row up (sent or skipped); null = pending.
+  dispatchedAt   DateTime?        @db.Timestamptz(3)
   createdAt      DateTime         @default(now()) @db.Timestamptz(3)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -353,6 +371,24 @@ model Notification {
   lead         Lead?        @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   @@index([userId, readAt, createdAt(sort: Desc)])
+  @@index([dispatchedAt, createdAt])
+}
+
+/// Browser Web Push subscription (one per device/browser profile).
+model PushSubscription {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @db.Uuid
+  userId         String   @db.Uuid
+  endpoint       String   @unique @db.VarChar(1000)
+  p256dh         String   @db.VarChar(200)
+  auth           String   @db.VarChar(100)
+  userAgent      String?  @db.VarChar(256)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model AiInsight {

@@ -8,6 +8,7 @@ export const TENANT_MODELS = new Set([
   'LeadActivity',
   'SlaPolicy',
   'Notification',
+  'PushSubscription',
   'AiInsight',
   'AuditLog',
 ]);

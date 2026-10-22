@@ -10,6 +10,7 @@ import { LocaleSwitch } from '@/features/locale-switch';
 import { apiRequest } from '@/shared/api';
 import { errorMessage, serverFieldErrors, validationMessage } from '@/shared/lib';
 import { Button, Card, CardContent, CardHeader, CardTitle, Field, FormAlert, Input, PageHeader, PasswordInput } from '@/shared/ui';
+import { NotificationSettingsCard } from './notification-settings-card';
 
 const NameSchema = z.object({ fullName: UpdateProfileSchema.shape.fullName.unwrap() });
 type NameForm = z.infer<typeof NameSchema>;
@@ -118,6 +119,7 @@ export function ProfilePage() {
       <div className="grid max-w-5xl gap-6 lg:grid-cols-2">
         <NameCard />
         <PasswordCard />
+        <NotificationSettingsCard />
       </div>
     </>
   );
