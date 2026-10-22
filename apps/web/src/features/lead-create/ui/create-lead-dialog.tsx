@@ -88,6 +88,7 @@ function CreateLeadForm({ onDone }: { onDone: () => void }) {
         assignees={canAssign ? assignees : undefined}
         industryPreset={config.industryPreset}
         leadFields={config.leadFields}
+        industry={organization.industry}
       />
       <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 md:flex-row md:justify-end">
         <Button variant="outline" onClick={onDone} disabled={create.isPending}>

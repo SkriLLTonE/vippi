@@ -59,6 +59,7 @@ function EditForm({ lead, onDone }: { lead: LeadDto; onDone: () => void }) {
         sourceLocked={!sourceEditable}
         industryPreset={config.industryPreset}
         leadFields={config.leadFields}
+        industry={organization.industry}
       />
       <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 md:flex-row md:justify-end">
         <Button variant="outline" onClick={onDone} disabled={save.isPending}>

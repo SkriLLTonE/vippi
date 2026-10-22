@@ -1,5 +1,5 @@
 export { cn } from './cn';
-export { copyText } from './clipboard';
+export { copyText, copyTextFrom } from './clipboard';
 export { errorMessage, serverFieldErrors, validationMessage } from './errors';
 export {
   formatDate,
@@ -15,5 +15,6 @@ export {
   todayTashkent,
 } from './format';
 export type { Translate } from './format';
+export { applyPhoneEdit, formatPhoneMask, phoneCaretPosition, phoneLocalDigits, phoneMaskValue } from './phone-mask';
 export { serverNow, syncServerTime, useNow } from './server-time';
 export { useMediaQuery } from './use-media-query';

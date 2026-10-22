@@ -21,8 +21,9 @@ export {
   Tooltip,
   TooltipProvider,
 } from './menu';
-export { Alert, Code, CopyButton, PageHeader } from './misc';
+export { Alert, Code, CopyButton, IconButton, PageHeader } from './misc';
 export { MultiSelect } from './multi-select';
+export { PhoneInput } from './phone-input';
 export { DelayedSkeleton, EmptyState, ErrorState, Skeleton } from './states';
 export { ForbiddenState, NotFoundState } from './status-pages';
 export { Pagination, SortableTh, Table, Td, Th, Tr } from './table';

@@ -1,17 +1,19 @@
 import {
   CURRENCIES,
   DISTRICTS,
+  INDUSTRY_TEMPLATES,
   LEAD_SOURCES,
   PROPERTY_TYPES,
   localizedLabel,
+  type Industry,
   type IndustryPreset,
   type LeadFieldDef,
   type UserRef,
 } from '@vippi/shared';
-import type { UseFormReturn } from 'react-hook-form';
+import { Controller, type UseFormReturn } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { validationMessage } from '@/shared/lib';
-import { Field, Input, NativeSelect, Textarea } from '@/shared/ui';
+import { Field, Input, NativeSelect, PhoneInput, Textarea } from '@/shared/ui';
 import type { LeadFormInput, LeadFormValues } from '../model/lead-form';
 
 interface LeadFormFieldsProps {
@@ -23,18 +25,26 @@ interface LeadFormFieldsProps {
   industryPreset?: IndustryPreset;
   /** Organization custom fields to render. */
   leadFields?: readonly LeadFieldDef[];
+  /** ADR-025: industry sample drives the placeholders. */
+  industry?: Industry;
 }
 
-/** FR-010 fields; phone hint `+998 __ ___ __ __`. */
+/** FR-010 fields; phone is masked `+998 (XX) XXX-XX-XX`. */
 export function LeadFormFields({
   form,
   assignees,
   sourceLocked,
   industryPreset = 'REAL_ESTATE',
   leadFields = [],
+  industry = industryPreset === 'REAL_ESTATE' ? 'REAL_ESTATE' : 'OTHER',
 }: LeadFormFieldsProps) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language === 'uz' ? 'uz' : 'ru';
+  const sample = INDUSTRY_TEMPLATES[industry].sample;
+  const textPlaceholder = (key: string) => {
+    const v = sample.attributes[key];
+    return typeof v === 'string' ? v : undefined;
+  };
   const { register, formState } = form;
   const err = (name: Exclude<keyof LeadFormInput, 'attributes' | 'attributeCurrencies'>) => {
     const e = formState.errors[name];
@@ -48,7 +58,15 @@ export function LeadFormFields({
         {(c) => <Input {...c} autoComplete="off" {...register('fullName')} />}
       </Field>
       <Field label={t('lead.field.phone')} hint={t('lead.phoneHint')} error={err('phone')}>
-        {(c) => <Input {...c} type="tel" inputMode="tel" placeholder="+998 __ ___ __ __" {...register('phone')} />}
+        {(c) => (
+          <Controller
+            control={form.control}
+            name="phone"
+            render={({ field }) => (
+              <PhoneInput {...c} ref={field.ref} name={field.name} value={field.value} onChange={field.onChange} onBlur={field.onBlur} />
+            )}
+          />
+        )}
       </Field>
       <Field label={t('lead.field.source')} error={err('source')} hint={sourceLocked ? t('lead.sourceLocked') : undefined}>
         {(c) => (
@@ -70,7 +88,14 @@ export function LeadFormFields({
         error={err('message')}
         aside={<span className="text-xs text-subtle-foreground tabular">{messageLength}/4000</span>}
       >
-        {(c) => <Textarea {...c} rows={3} {...register('message')} />}
+        {(c) => (
+          <Textarea
+            {...c}
+            rows={3}
+            placeholder={t('lead.messagePlaceholder', { example: sample.message[locale] })}
+            {...register('message')}
+          />
+        )}
       </Field>
       <Field label={t('lead.field.budget')} error={err('budgetAmount')}>
         {(c) => (
@@ -156,7 +181,15 @@ export function LeadFormFields({
                 case 'number':
                   return <Input {...c} inputMode="decimal" {...register(`attributes.${def.key}`)} />;
                 default:
-                  return <Input {...c} autoComplete="off" maxLength={500} {...register(`attributes.${def.key}`)} />;
+                  return (
+                    <Input
+                      {...c}
+                      autoComplete="off"
+                      maxLength={500}
+                      placeholder={textPlaceholder(def.key)}
+                      {...register(`attributes.${def.key}`)}
+                    />
+                  );
               }
             }}
           </Field>
