@@ -25,6 +25,7 @@ export function initI18n(): typeof i18n {
     fallbackLng: 'ru',
     interpolation: { escapeValue: false },
     returnNull: false,
+    react: { bindI18nStore: 'added' },
   });
   document.documentElement.lang = lng;
   return i18n;

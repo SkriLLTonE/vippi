@@ -10,9 +10,11 @@ import {
   leadFormSchema,
   leadToForm,
   onLeadChanged,
+  type LeadFormConfig,
   type LeadFormInput,
   type LeadFormValues,
 } from '@/entities/lead';
+import { useSession } from '@/entities/session';
 import { apiRequest, isApiError } from '@/shared/api';
 import { errorMessage, serverFieldErrors } from '@/shared/lib';
 import { Button, Dialog, FormAlert } from '@/shared/ui';
@@ -21,13 +23,15 @@ function EditForm({ lead, onDone }: { lead: LeadDto; onDone: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const sourceEditable = lead.createdVia === 'MANUAL';
+  const { organization } = useSession();
+  const config: LeadFormConfig = { industryPreset: organization.industryPreset, leadFields: organization.leadFields };
   const form = useForm<LeadFormInput, unknown, LeadFormValues>({
     resolver: zodResolver(leadFormSchema),
     defaultValues: leadToForm(lead),
   });
   const save = useMutation({
     mutationFn: (v: LeadFormValues) =>
-      apiRequest<LeadDto>(`/leads/${lead.id}`, { method: 'PATCH', body: formToUpdateRequest(v, sourceEditable) }),
+      apiRequest<LeadDto>(`/leads/${lead.id}`, { method: 'PATCH', body: formToUpdateRequest(v, sourceEditable, config) }),
     onSuccess: (updated) => {
       onLeadChanged(qc, updated);
       toast.success(t('common.saved'));
@@ -35,7 +39,11 @@ function EditForm({ lead, onDone }: { lead: LeadDto; onDone: () => void }) {
     },
     onError: (e) => {
       for (const d of serverFieldErrors(e)) {
-        const field = d.path.split('.')[0] ?? '';
+        const [field = '', attrKey] = d.path.split('.');
+        if (field === 'attributes' && attrKey) {
+          form.setError(`attributes.${attrKey}`, { message: d.code });
+          continue;
+        }
         const name = field === 'budget' ? 'budgetAmount' : field;
         if (name in leadToForm(lead)) form.setError(name as keyof LeadFormInput, { message: d.code });
       }
@@ -46,7 +54,12 @@ function EditForm({ lead, onDone }: { lead: LeadDto; onDone: () => void }) {
       <FormAlert>
         {save.error && !(isApiError(save.error) && save.error.code === 'VALIDATION_FAILED') ? errorMessage(save.error, t) : null}
       </FormAlert>
-      <LeadFormFields form={form} sourceLocked={!sourceEditable} />
+      <LeadFormFields
+        form={form}
+        sourceLocked={!sourceEditable}
+        industryPreset={config.industryPreset}
+        leadFields={config.leadFields}
+      />
       <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 md:flex-row md:justify-end">
         <Button variant="outline" onClick={onDone} disabled={save.isPending}>
           {t('common.cancel')}

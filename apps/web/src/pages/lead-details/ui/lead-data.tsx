@@ -1,10 +1,18 @@
-import { districtName, type LeadDto } from '@vippi/shared';
+import {
+  districtName,
+  localizedLabel,
+  type LeadAttributeValue,
+  type LeadDto,
+  type LeadFieldDef,
+  type Locale,
+} from '@vippi/shared';
 import { Phone } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 import { SourceLabel } from '@/entities/lead';
-import { formatDateTime, formatMoney, formatPhone } from '@/shared/lib';
+import { useSession } from '@/entities/session';
+import { formatDateTime, formatMoney, formatPhone, type Translate } from '@/shared/lib';
 import { Card, CardContent, CardHeader, CardTitle, CopyButton } from '@/shared/ui';
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -16,8 +24,20 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+function attributeText(def: LeadFieldDef, value: LeadAttributeValue | undefined, locale: Locale, t: Translate): ReactNode {
+  if (value === undefined) return null;
+  if (typeof value === 'object') return <span className="tabular">{formatMoney(value.amount, value.currency, t)}</span>;
+  if (def.type === 'single_select') {
+    const option = def.options?.find((o) => o.value === value);
+    return option ? (localizedLabel(option.label, locale) ?? option.value) : String(value);
+  }
+  if (typeof value === 'number') return <span className="tabular">{value.toLocaleString(locale === 'uz' ? 'uz-UZ' : 'ru-RU')}</span>;
+  return <span className="whitespace-pre-wrap break-words">{value}</span>;
+}
+
 export function LeadData({ lead }: { lead: LeadDto }) {
   const { t, i18n } = useTranslation();
+  const { organization } = useSession();
   const locale = i18n.language === 'uz' ? 'uz' : 'ru';
   return (
     <Card>
@@ -46,9 +66,20 @@ export function LeadData({ lead }: { lead: LeadDto }) {
           <Row label={t('lead.field.budget')}>
             {lead.budget ? <span className="tabular">{formatMoney(lead.budget.amount, lead.budget.currency, t)}</span> : null}
           </Row>
-          <Row label={t('lead.field.district')}>{lead.district ? districtName(lead.district, locale) : null}</Row>
-          <Row label={t('lead.field.propertyType')}>{lead.propertyType ? t(`lead.propertyType.${lead.propertyType}`) : null}</Row>
-          <Row label={t('lead.field.rooms')}>{lead.rooms ?? null}</Row>
+          {organization.industryPreset === 'REAL_ESTATE' ? (
+            <>
+              <Row label={t('lead.field.district')}>{lead.district ? districtName(lead.district, locale) : null}</Row>
+              <Row label={t('lead.field.propertyType')}>
+                {lead.propertyType ? t(`lead.propertyType.${lead.propertyType}`) : null}
+              </Row>
+              <Row label={t('lead.field.rooms')}>{lead.rooms ?? null}</Row>
+            </>
+          ) : null}
+          {organization.leadFields.map((def) => (
+            <Row key={def.key} label={localizedLabel(def.label, locale) ?? def.key}>
+              {attributeText(def, lead.attributes?.[def.key], locale, t)}
+            </Row>
+          ))}
           <Row label={t('lead.field.assignee')}>{lead.assignee?.fullName ?? t('lead.unassigned')}</Row>
           <Row label={t('lead.field.receivedAt')}>
             <span className="tabular">{formatDateTime(lead.receivedAt)}</span>

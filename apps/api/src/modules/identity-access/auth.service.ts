@@ -19,6 +19,7 @@ import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { ProductEvents } from '../../common/product-events.js';
 import type { ReqMeta } from '../../common/req-meta.js';
 import { AuditService } from '../audit/audit.service.js';
+import { toOrgLeadConfig } from '../organizations/organizations.service.js';
 import { PasswordService } from './password.service.js';
 import { SessionsService } from './sessions.service.js';
 
@@ -53,7 +54,9 @@ export class AuthService {
     const locale = input.locale ?? 'ru';
     try {
       const result = await this.prisma.db.$transaction(async (tx) => {
-        const org = await tx.organization.create({ data: { name: input.organizationName, defaultLocale: locale } });
+        const org = await tx.organization.create({
+          data: { name: input.organizationName, defaultLocale: locale, industryPreset: input.industryPreset ?? 'REAL_ESTATE' },
+        });
         const user = await tx.user.create({
           data: { email: input.email, passwordHash, fullName: input.fullName, locale, lastLoginAt: this.clock.now() },
         });
@@ -73,7 +76,11 @@ export class AuthService {
         );
         return { token, userId: user.id, orgId: org.id };
       });
-      this.events.emit('org_registered', { organizationId: result.orgId, userId: result.userId });
+      this.events.emit(
+        'org_registered',
+        { organizationId: result.orgId, userId: result.userId },
+        { industryPreset: input.industryPreset ?? 'REAL_ESTATE' },
+      );
       return { token: result.token, me: await this.me(result.userId, result.orgId, 'OWNER') };
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') throw emailTaken();
@@ -164,6 +171,7 @@ export class AuthService {
         isDemo: org.isDemo,
         aiExternalProcessingEnabled: org.aiExternalProcessingEnabled,
         timezone: org.timezone,
+        ...toOrgLeadConfig(org),
       },
       role,
       permissions: permissionsFor(role),

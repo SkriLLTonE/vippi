@@ -5,7 +5,10 @@ import {
   PROPERTY_TYPES,
   normalizePhone,
   type CreateLeadInput,
+  type Currency,
+  type IndustryPreset,
   type LeadDto,
+  type LeadFieldDef,
   type UpdateLeadRequest,
 } from '@vippi/shared';
 import { z } from 'zod';
@@ -33,6 +36,9 @@ export const leadFormSchema = z
     propertyType: optionalEnum(PROPERTY_TYPES),
     rooms: z.string().refine((v) => v === '' || /^(10|[1-9])$/.test(v), { message: 'invalid_rooms' }),
     assigneeId: z.string(),
+    /** Custom field inputs keyed by definition key; types are checked by the API (ADR-024). */
+    attributes: z.record(z.string(), z.string()),
+    attributeCurrencies: z.record(z.string(), z.enum(CURRENCIES)),
   })
   .refine((v) => v.fullName !== '' || v.phone !== '', { path: ['fullName'], message: 'name_or_phone_required' });
 
@@ -51,10 +57,52 @@ export const emptyLeadForm: LeadFormInput = {
   propertyType: '',
   rooms: '',
   assigneeId: '',
+  attributes: {},
+  attributeCurrencies: {},
 };
+
+function attributesToForm(lead: LeadDto): Pick<LeadFormInput, 'attributes' | 'attributeCurrencies'> {
+  const attributes: Record<string, string> = {};
+  const attributeCurrencies: Record<string, Currency> = {};
+  for (const [key, value] of Object.entries(lead.attributes ?? {})) {
+    if (typeof value === 'object') {
+      attributes[key] = value.amount;
+      attributeCurrencies[key] = value.currency;
+    } else {
+      attributes[key] = String(value);
+    }
+  }
+  return { attributes, attributeCurrencies };
+}
+
+function attributeValue(def: LeadFieldDef, v: LeadFormValues): unknown {
+  const raw = (v.attributes[def.key] ?? '').trim();
+  if (raw === '') return null;
+  switch (def.type) {
+    case 'number': {
+      const n = Number(raw.replace(/[\s\u00A0]/g, '').replace(',', '.'));
+      return Number.isFinite(n) ? n : raw;
+    }
+    case 'money':
+      return { amount: raw.replace(/[\s\u00A0]/g, ''), currency: v.attributeCurrencies[def.key] ?? 'UZS' };
+    default:
+      return raw;
+  }
+}
+
+/** Create: only filled values. Patch: every rendered field, empty input clears it (`null`). */
+export function formToAttributes(defs: readonly LeadFieldDef[], v: LeadFormValues, mode: 'create' | 'patch') {
+  const out: Record<string, unknown> = {};
+  for (const def of defs) {
+    const value = attributeValue(def, v);
+    if (value !== null || mode === 'patch') out[def.key] = value;
+  }
+  return out;
+}
 
 export function leadToForm(lead: LeadDto): LeadFormInput {
   return {
+    ...attributesToForm(lead),
     fullName: lead.fullName ?? '',
     phone: lead.phone ?? '',
     source: lead.source,
@@ -71,8 +119,16 @@ export function leadToForm(lead: LeadDto): LeadFormInput {
 
 const orUndefined = (v: string) => (v === '' ? undefined : v);
 
-export function formToCreateRequest(v: LeadFormValues): CreateLeadInput {
+export interface LeadFormConfig {
+  industryPreset: IndustryPreset;
+  /** Definitions rendered in the form. */
+  leadFields: readonly LeadFieldDef[];
+}
+
+export function formToCreateRequest(v: LeadFormValues, config?: LeadFormConfig): CreateLeadInput {
+  const attributes = config ? formToAttributes(config.leadFields, v, 'create') : {};
   return {
+    ...(Object.keys(attributes).length ? { attributes } : {}),
     fullName: orUndefined(v.fullName),
     phone: orUndefined(v.phone),
     source: v.source,
@@ -86,9 +142,12 @@ export function formToCreateRequest(v: LeadFormValues): CreateLeadInput {
   };
 }
 
-/** PATCH body: empty strings clear the field (null). Source is sent only if editable. */
-export function formToUpdateRequest(v: LeadFormValues, sourceEditable: boolean): Record<string, unknown> {
-  const body: Omit<UpdateLeadRequest, 'phone'> & { phone?: string | null } = {
+/**
+ * PATCH body: empty strings clear the field (null). Source is sent only if editable.
+ * GENERIC orgs do not render real-estate fields, so they are not sent and stored values survive (ADR-024).
+ */
+export function formToUpdateRequest(v: LeadFormValues, sourceEditable: boolean, config?: LeadFormConfig): Record<string, unknown> {
+  const body: Omit<UpdateLeadRequest, 'phone' | 'attributes'> & { phone?: string | null; attributes?: Record<string, unknown> } = {
     fullName: v.fullName || null,
     phone: v.phone || null,
     sourceDetail: v.sourceDetail || null,
@@ -99,5 +158,11 @@ export function formToUpdateRequest(v: LeadFormValues, sourceEditable: boolean):
     rooms: v.rooms ? Number(v.rooms) : null,
   };
   if (sourceEditable) body.source = v.source;
+  if (config?.industryPreset === 'GENERIC') {
+    delete body.district;
+    delete body.propertyType;
+    delete body.rooms;
+  }
+  if (config?.leadFields.length) body.attributes = formToAttributes(config.leadFields, v, 'patch');
   return body;
 }

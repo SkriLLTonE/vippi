@@ -17,6 +17,11 @@ import {
   type ReplyDraft,
   type ReplyDraftRequest,
   type WeeklySummary,
+  localizedLabel,
+  parseLeadFieldDefs,
+  visibleAttributes,
+  type IndustryPreset,
+  type LeadFieldDef,
 } from '@vippi/shared';
 import { z } from 'zod';
 import type { Actor } from '../../common/actor.js';
@@ -34,7 +39,15 @@ import { ruleBasedAnalysis } from './fallback/rules.js';
 import { templateReply, templateWeeklySummary, type WeeklyAggregates } from './fallback/templates.js';
 import { uzCyrillicToLatin } from './fallback/translit.js';
 import { checkLeadAnalysis, checkReplyDraft, checkWeeklySummary } from './post-validation/checks.js';
-import { leadAnalysisPrompt, promptVersion, replyDraftPrompt, weeklySummaryPrompt } from './prompts/prompts.js';
+import {
+  genericLeadAnalysisPrompt,
+  genericReplyDraftPrompt,
+  leadAnalysisPrompt,
+  promptVersion,
+  replyDraftPrompt,
+  weeklySummaryPrompt,
+} from './prompts/prompts.js';
+import type { LeadWithRelations } from '../leads/domain/lead-mapper.js';
 import { AI_PROVIDER, AiProviderError, type AiProvider } from './providers/ai-provider.interface.js';
 
 const MAX_PROMPT_CHARS = 12_000;
@@ -57,9 +70,20 @@ interface RunSpec<T> {
   maxOutputTokens: number;
   temperature: number;
   postCheck: (out: T) => boolean;
+  /** Applied to valid provider output before it is stored. */
+  normalize?: (out: T) => T;
   fallback: () => T;
   force?: boolean;
 }
+
+interface OrgAiContext {
+  name: string;
+  preset: IndustryPreset;
+  fields: LeadFieldDef[];
+}
+
+/** ADR-024: GENERIC organizations never get real-estate fields from the model. */
+const withoutRealEstateFields = (a: LeadAnalysis): LeadAnalysis => ({ ...a, district: null, propertyType: null, rooms: null });
 
 class OutputInvalid extends Error {
   override name = 'OutputInvalid';
@@ -201,7 +225,7 @@ export class AiService {
           }
           const parsed = spec.schema.safeParse(parsedJson);
           if (!parsed.success || !spec.postCheck(parsed.data)) throw new OutputInvalid('schema/post-check');
-          return { output: parsed.data, usage: res.usage };
+          return { output: spec.normalize ? spec.normalize(parsed.data) : parsed.data, usage: res.usage };
         } catch (e) {
           if (controller.signal.aborted) throw new TimeoutError();
           const retryable = e instanceof AiProviderError && e.retryable;
@@ -240,39 +264,72 @@ export class AiService {
     return u?.locale === 'uz' ? 'uz' : 'ru';
   }
 
+  private async orgContext(orgId: string): Promise<OrgAiContext> {
+    const org = await this.prisma.db.organization.findUniqueOrThrow({
+      where: { id: orgId },
+      select: { name: true, industryPreset: true, leadFieldDefs: true },
+    });
+    return { name: org.name, preset: org.industryPreset, fields: parseLeadFieldDefs(org.leadFieldDefs) };
+  }
+
+  /** Labels of custom fields that have no value on the lead yet (GENERIC hints, no customer data). */
+  private missingFieldLabels(ctx: OrgAiContext, attributes: unknown, locale: Locale): string[] {
+    const filled = visibleAttributes(ctx.fields, attributes);
+    return ctx.fields.filter((f) => filled[f.key] === undefined).map((f) => localizedLabel(f.label, locale) ?? f.key);
+  }
+
   // ---------------------------------------------------------------- lead analysis / draft
 
   /** FR-070, AI-001, AI-002 */
   async analyze(actor: Actor, leadId: string, force: boolean): Promise<AiResultEnvelope<LeadAnalysis>> {
     const lead = await this.leads.getVisibleLead(actor, leadId);
     const locale = await this.userLocale(actor.userId);
+    const ctx = await this.orgContext(actor.orgId);
     const message = lead.message ?? '';
     const promptInput = { source: lead.source, message, name: lead.fullName };
-    const { env, fresh } = await this.run<LeadAnalysis>({
+    const ruleInput = { source: lead.source, message, name: lead.fullName, hasPhone: Boolean(lead.phone) };
+    const common = {
       actor,
       leadId,
-      kind: 'LEAD_ANALYSIS',
+      kind: 'LEAD_ANALYSIS' as const,
       locale,
       params: null,
-      version: promptVersion(leadAnalysisPrompt),
-      hashInput: {
-        ...promptInput,
-        budget: lead.budgetAmount?.toString() ?? null,
-        district: lead.district,
-        propertyType: lead.propertyType,
-        rooms: lead.rooms,
-      },
       schema: LeadAnalysisSchema,
-      system: leadAnalysisPrompt.system(locale),
       user: leadAnalysisPrompt.user(promptInput),
       inputChars: message.length,
       maxOutputTokens: 800 + THINKING_HEADROOM_TOKENS,
       temperature: 0.2,
-      postCheck: (out) => checkLeadAnalysis(out, message),
-      fallback: () =>
-        ruleBasedAnalysis({ source: lead.source, message, name: lead.fullName, hasPhone: Boolean(lead.phone) }, locale),
+      postCheck: (out: LeadAnalysis) => checkLeadAnalysis(out, message),
       force,
-    });
+    };
+    let spec: RunSpec<LeadAnalysis>;
+    if (ctx.preset === 'GENERIC') {
+      const fields = ctx.fields.map((f) => ({ key: f.key, label: localizedLabel(f.label, locale) ?? f.key }));
+      const missingFields = this.missingFieldLabels(ctx, lead.attributes, locale);
+      spec = {
+        ...common,
+        version: promptVersion(genericLeadAnalysisPrompt),
+        hashInput: { ...promptInput, budget: lead.budgetAmount?.toString() ?? null, fields, missingFields },
+        system: genericLeadAnalysisPrompt.system(locale, fields),
+        normalize: withoutRealEstateFields,
+        fallback: () => ruleBasedAnalysis({ ...ruleInput, missingFields }, locale, 'GENERIC'),
+      };
+    } else {
+      spec = {
+        ...common,
+        version: promptVersion(leadAnalysisPrompt),
+        hashInput: {
+          ...promptInput,
+          budget: lead.budgetAmount?.toString() ?? null,
+          district: lead.district,
+          propertyType: lead.propertyType,
+          rooms: lead.rooms,
+        },
+        system: leadAnalysisPrompt.system(locale),
+        fallback: () => ruleBasedAnalysis(ruleInput, locale),
+      };
+    }
+    const { env, fresh } = await this.run<LeadAnalysis>(spec);
     if (fresh) {
       await this.leads.recordAiActivity(actor, leadId, 'AI_ANALYSIS_GENERATED', {
         insightId: env.insightId,
@@ -291,7 +348,8 @@ export class AiService {
   /** FR-071, AI-003 */
   async replyDraft(actor: Actor, leadId: string, req: ReplyDraftRequest): Promise<AiResultEnvelope<ReplyDraft>> {
     const lead = await this.leads.getVisibleLead(actor, leadId);
-    const org = await this.prisma.db.organization.findUniqueOrThrow({ where: { id: actor.orgId }, select: { name: true } });
+    const org = await this.orgContext(actor.orgId);
+    if (org.preset === 'GENERIC') return this.genericReplyDraft(actor, lead, org, req);
     const latest = await this.prisma.db.aiInsight.findFirst({
       where: { organizationId: actor.orgId, leadId, kind: 'LEAD_ANALYSIS' },
       orderBy: { createdAt: 'desc' },
@@ -344,6 +402,70 @@ export class AiService {
     return env;
   }
 
+  /** ADR-024: reply draft for any business — no property/district/rooms in prompt or template. */
+  private async genericReplyDraft(
+    actor: Actor,
+    lead: LeadWithRelations,
+    org: OrgAiContext,
+    req: ReplyDraftRequest,
+  ): Promise<AiResultEnvelope<ReplyDraft>> {
+    const latest = await this.prisma.db.aiInsight.findFirst({
+      where: { organizationId: actor.orgId, leadId: lead.id, kind: 'LEAD_ANALYSIS' },
+      orderBy: { createdAt: 'desc' },
+    });
+    const analysis = latest ? LeadAnalysisSchema.safeParse(latest.output) : null;
+    const a = analysis?.success ? analysis.data : null;
+    const message = lead.message ?? '';
+    const managerFirstName = actor.fullName.split(/\s+/)[0] ?? actor.fullName;
+    const asReplyScript = (s: string) => (req.language === 'uz' ? uzCyrillicToLatin(s) : s);
+    const missingFields = this.missingFieldLabels(org, lead.attributes, req.language);
+    const promptInput = {
+      lead: { source: lead.source, message, name: lead.fullName ? asReplyScript(lead.fullName) : lead.fullName },
+      companyName: asReplyScript(org.name),
+      managerFirstName: asReplyScript(managerFirstName),
+      language: req.language,
+      tone: req.tone,
+      analysis: a ? { need: a.need, budget: a.budget, missingInfo: a.missingInfo } : null,
+    };
+    const budget =
+      a?.budget ?? (lead.budgetAmount && lead.budgetCurrency ? { amount: Number(lead.budgetAmount), currency: lead.budgetCurrency } : null);
+    const { env } = await this.run<ReplyDraft>({
+      actor,
+      leadId: lead.id,
+      kind: 'REPLY_DRAFT',
+      locale: req.language,
+      params: { tone: req.tone, language: req.language },
+      version: promptVersion(genericReplyDraftPrompt),
+      hashInput: { ...promptInput, missingFields },
+      schema: ReplyDraftSchema,
+      system: genericReplyDraftPrompt.system(req.language),
+      user: genericReplyDraftPrompt.user(promptInput),
+      inputChars: message.length,
+      maxOutputTokens: 600 + THINKING_HEADROOM_TOKENS,
+      temperature: 0.5,
+      postCheck: (out) => checkReplyDraft(out, req.language),
+      fallback: () =>
+        templateReply(
+          {
+            name: lead.fullName,
+            companyName: org.name,
+            managerName: managerFirstName,
+            analysis: { budget, district: null, propertyType: null, rooms: null },
+            preset: 'GENERIC',
+            missingFields,
+          },
+          req.language,
+          req.tone,
+        ),
+    });
+    this.events.emit('ai_draft_generated', { organizationId: actor.orgId, userId: actor.userId }, {
+      source: env.source,
+      language: req.language,
+      tone: req.tone,
+    });
+    return env;
+  }
+
   async leadState(actor: Actor, leadId: string): Promise<LeadAiState> {
     await this.leads.getVisibleLead(actor, leadId);
     const [analysis, draft] = await Promise.all(
@@ -375,8 +497,14 @@ export class AiService {
     const row = await this.insightFor(actor, leadId, req.insightId, 'LEAD_ANALYSIS');
     const parsed = LeadAnalysisSchema.safeParse(row.output);
     if (!parsed.success) throw notFound();
+    const { industryPreset } = await this.prisma.db.organization.findUniqueOrThrow({
+      where: { id: actor.orgId },
+      select: { industryPreset: true },
+    });
+    // ADR-024: real-estate fields are hidden for GENERIC, so they are never written from an insight.
+    const fields = industryPreset === 'GENERIC' ? req.fields.filter((f) => f === 'budget') : req.fields;
     const values: Partial<Record<(typeof req.fields)[number], unknown>> = {};
-    for (const f of req.fields) values[f] = parsed.data[f];
+    for (const f of fields) values[f] = parsed.data[f];
     return this.leads.applyExtractedFields(actor, leadId, values, row.isFallback ? 'RULES' : 'AI');
   }
 

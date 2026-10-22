@@ -21,6 +21,11 @@ import {
   type OverdueQuery,
   type Paginated,
   type UpdateLeadRequest,
+  parseLeadFieldDefs,
+  validateLeadAttributes,
+  type AttributesMode,
+  type LeadAttributeValue,
+  type LeadFieldDef,
 } from '@vippi/shared';
 import type { Actor, ApiKeyActor } from '../../common/actor.js';
 import { AppException, forbidden, notFound } from '../../common/app-exception.js';
@@ -180,8 +185,33 @@ export class LeadsService {
   }
 
   private async toDto(lead: LeadWithRelations): Promise<LeadDto> {
-    const policy = await this.sla.getForOrg(lead.organizationId);
-    return toLeadDto(lead, policy.forgottenAfterHours, this.clock.now());
+    const [policy, defs] = await Promise.all([this.sla.getForOrg(lead.organizationId), this.fieldDefs(lead.organizationId)]);
+    return toLeadDto(lead, policy.forgottenAfterHours, this.clock.now(), defs);
+  }
+
+  /** ADR-024: the organization's custom lead field definitions. */
+  async fieldDefs(orgId: string): Promise<LeadFieldDef[]> {
+    const org = await this.prisma.db.organization.findUniqueOrThrow({ where: { id: orgId }, select: { leadFieldDefs: true } });
+    return parseLeadFieldDefs(org.leadFieldDefs);
+  }
+
+  /** Validates attributes against the organization's definitions; unknown keys and wrong types → 400. */
+  private async checkAttributes(
+    orgId: string,
+    input: Record<string, unknown> | undefined,
+    mode: AttributesMode,
+  ): Promise<Record<string, LeadAttributeValue | null>> {
+    if (input === undefined && mode !== 'create') return {};
+    const r = validateLeadAttributes(await this.fieldDefs(orgId), input, mode);
+    if (!r.ok) {
+      throw new AppException(
+        400,
+        'VALIDATION_FAILED',
+        'Invalid lead attributes',
+        r.issues.map((i) => ({ path: i.path, code: i.code, message: i.code })),
+      );
+    }
+    return r.value;
   }
 
   async getDto(actor: Actor, id: string): Promise<LeadDto> {
@@ -204,6 +234,7 @@ export class LeadsService {
     const now = this.clock.now();
     const assigneeId = actor.role === 'MANAGER' ? actor.userId : (input.assigneeId ?? null);
     if (assigneeId && assigneeId !== actor.userId) await this.assertAssignable(actor.orgId, assigneeId);
+    const attributes = await this.checkAttributes(actor.orgId, input.attributes, 'create');
     const policy = await this.sla.getForOrg(actor.orgId);
     const duplicate = await this.findPossibleDuplicate(actor.orgId, input.phone, now);
 
@@ -212,6 +243,7 @@ export class LeadsService {
       const created = await tx.lead.create({
         data: {
           ...this.fieldsToData(input),
+          attributes: attributes as Prisma.InputJsonValue,
           organizationId: actor.orgId,
           number,
           assigneeId,
@@ -258,6 +290,7 @@ export class LeadsService {
       }
     }
     const now = this.clock.now();
+    const attributes = await this.checkAttributes(key.orgId, input.attributes, 'import');
     const policy = await this.sla.getForOrg(key.orgId);
     const duplicate = await this.findPossibleDuplicate(key.orgId, input.phone, now);
     try {
@@ -266,6 +299,7 @@ export class LeadsService {
         const created = await tx.lead.create({
           data: {
             ...this.fieldsToData(input),
+            attributes: attributes as Prisma.InputJsonValue,
             organizationId: key.orgId,
             number,
             createdVia: 'API',
@@ -399,6 +433,27 @@ export class LeadsService {
         data.budgetAmount = amount;
         data.budgetCurrency = currency;
         changed.push('budget');
+      }
+    }
+    if (input.attributes !== undefined) {
+      const patch = await this.checkAttributes(actor.orgId, input.attributes, 'patch');
+      const stored: Record<string, unknown> =
+        lead.attributes && typeof lead.attributes === 'object' && !Array.isArray(lead.attributes) ? { ...lead.attributes } : {};
+      let attributesChanged = false;
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null) {
+          if (key in stored) {
+            delete stored[key];
+            attributesChanged = true;
+          }
+        } else if (JSON.stringify(stored[key]) !== JSON.stringify(value)) {
+          stored[key] = value;
+          attributesChanged = true;
+        }
+      }
+      if (attributesChanged) {
+        data.attributes = stored as Prisma.InputJsonValue;
+        changed.push('attributes');
       }
     }
     const nextName = input.fullName !== undefined ? input.fullName : lead.fullName;

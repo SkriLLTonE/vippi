@@ -10,7 +10,10 @@ import { configureApp } from '../../src/app.setup.js';
 import { Clock } from '../../src/common/clock.js';
 import { PrismaService } from '../../src/common/prisma/prisma.service.js';
 import { RateLimiter } from '../../src/common/rate-limiter.js';
+import { APP_CONFIG, loadConfig } from '../../src/config/env.js';
 import { AI_PROVIDER, type AiProvider } from '../../src/modules/ai/providers/ai-provider.interface.js';
+import { EmailSender } from '../../src/modules/notifications/delivery/email-sender.js';
+import { PushSender } from '../../src/modules/notifications/delivery/push-sender.js';
 
 export const ORIGIN = 'http://localhost:8080';
 export const PASSWORD = 'test-password-123';
@@ -39,12 +42,17 @@ export interface TestContext {
   close: () => Promise<void>;
 }
 
-export async function createTestApp(opts: { aiProvider?: AiProvider | null } = {}): Promise<TestContext> {
+export async function createTestApp(
+  opts: { aiProvider?: AiProvider | null; env?: Record<string, string>; pushSender?: PushSender; emailSender?: EmailSender } = {},
+): Promise<TestContext> {
   const clock = new TestClock();
   let builder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(Clock)
     .useValue(clock);
   if (opts.aiProvider !== undefined) builder = builder.overrideProvider(AI_PROVIDER).useValue(opts.aiProvider);
+  if (opts.env) builder = builder.overrideProvider(APP_CONFIG).useValue(loadConfig({ ...process.env, ...opts.env }));
+  if (opts.pushSender) builder = builder.overrideProvider(PushSender).useValue(opts.pushSender);
+  if (opts.emailSender) builder = builder.overrideProvider(EmailSender).useValue(opts.emailSender);
   const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false, bufferLogs: true });
   configureApp(app);

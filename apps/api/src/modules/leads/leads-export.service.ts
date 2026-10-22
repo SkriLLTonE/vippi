@@ -1,5 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { CSV_EXPORT_HEADERS, formatDateTimeTz, zonedParts, type LeadExportQuery } from '@vippi/shared';
+import {
+  CSV_EXPORT_HEADERS,
+  formatDateTimeTz,
+  parseLeadFieldDefs,
+  visibleAttributes,
+  zonedParts,
+  type LeadAttributeValue,
+  type LeadExportQuery,
+} from '@vippi/shared';
 import type { Actor } from '../../common/actor.js';
 import { AppException } from '../../common/app-exception.js';
 import { Clock } from '../../common/clock.js';
@@ -14,6 +22,8 @@ import { buildLeadWhere, leadOrderBy } from './domain/lead-where.js';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const fmt = (d: Date | null) => (d ? formatDateTimeTz(d) : null);
+const attributeCell = (v: LeadAttributeValue | undefined) =>
+  v === undefined ? null : typeof v === 'object' ? `${v.amount} ${v.currency}` : v;
 
 @Injectable()
 export class LeadsExportService {
@@ -43,8 +53,16 @@ export class LeadsExportService {
       include: { assignee: { select: { fullName: true, email: true } } },
     });
 
-    let body = `\uFEFF${csvLine(CSV_EXPORT_HEADERS)}`;
+    const org = await this.prisma.system.organization.findUniqueOrThrow({
+      where: { id: actor.orgId },
+      select: { leadFieldDefs: true },
+    });
+    const fieldDefs = parseLeadFieldDefs(org.leadFieldDefs);
+
+    // Fixed headers first (import template compatibility), then one `attr:<key>` column per active custom field.
+    let body = `\uFEFF${csvLine([...CSV_EXPORT_HEADERS, ...fieldDefs.map((d) => `attr:${d.key}`)])}`;
     for (const l of rows) {
+      const attrs = visibleAttributes(fieldDefs, l.attributes);
       body += csvLine([
         l.number,
         fmt(l.receivedAt),
@@ -69,6 +87,7 @@ export class LeadsExportService {
         l.createdVia,
         l.externalId,
         l.possibleDuplicateOfId !== null,
+        ...fieldDefs.map((d) => attributeCell(attrs[d.key])),
       ]);
     }
 

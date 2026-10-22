@@ -6,6 +6,39 @@ import { ChangeStatusSchema, CommentSchema, CreateLeadSchema, LeadListQuerySchem
 import { SlaPolicySchema } from './schemas/sla.js';
 import { addDaysToDateString, formatDateTimeTz, startOfZonedDay, zonedDateString } from './time.js';
 import { scoreBand } from './schemas/ai.js';
+import { MyStatsQuerySchema } from './schemas/analytics.js';
+import { isAllowedPushEndpoint, PushSubscriptionSchema } from './schemas/notifications.js';
+
+describe('push subscription endpoint allowlist (ADR-023)', () => {
+  it('accepts browser push services only', () => {
+    for (const ok of [
+      'https://fcm.googleapis.com/fcm/send/abc:def',
+      'https://updates.push.services.mozilla.com/wpush/v2/gAAA',
+      'https://db5p.notify.windows.com/w/?token=abc',
+      'https://web.push.apple.com/QGx',
+    ]) {
+      expect(isAllowedPushEndpoint(ok), ok).toBe(true);
+    }
+    for (const bad of [
+      'https://fcm.googleapis.com.evil.example/x',
+      'https://evilfcm.googleapis.com/x',
+      'https://fcm.googleapis.com:444/x',
+      'https://a@fcm.googleapis.com/x',
+      'http://fcm.googleapis.com/x',
+      'https://localhost/x',
+      'https://fcm.googleapis.com',
+    ]) {
+      expect(isAllowedPushEndpoint(bad), bad).toBe(false);
+    }
+  });
+
+  it('validates keys and rejects unknown fields', () => {
+    const sub = { endpoint: 'https://fcm.googleapis.com/fcm/send/x', keys: { p256dh: 'B'.repeat(87), auth: 'a'.repeat(22) } };
+    expect(PushSubscriptionSchema.safeParse(sub).success).toBe(true);
+    expect(PushSubscriptionSchema.safeParse({ ...sub, keys: { ...sub.keys, auth: 'not base64!' } }).success).toBe(false);
+    expect(PushSubscriptionSchema.safeParse({ ...sub, userId: 'x' }).success).toBe(false);
+  });
+});
 
 describe('schemas', () => {
   it('register: short password and password = email rejected (AC-003)', () => {
@@ -13,6 +46,14 @@ describe('schemas', () => {
     expect(RegisterOrganizationSchema.safeParse(base).success).toBe(false);
     expect(RegisterOrganizationSchema.safeParse({ ...base, password: 'a@b.uz' }).success).toBe(false);
     expect(RegisterOrganizationSchema.safeParse({ ...base, password: 'long-enough-1' }).success).toBe(true);
+  });
+
+  it('my stats query: preset required, no way to address another user (FR-056)', () => {
+    expect(MyStatsQuerySchema.parse({ preset: '30d' })).toEqual({ preset: '30d' });
+    expect(MyStatsQuerySchema.safeParse({}).success).toBe(false);
+    expect(MyStatsQuerySchema.safeParse({ preset: '90d' }).success).toBe(false);
+    expect(MyStatsQuerySchema.safeParse({ preset: '7d', assigneeId: 'u-2' }).success).toBe(false);
+    expect(MyStatsQuerySchema.safeParse({ preset: '7d', userId: 'u-2' }).success).toBe(false);
   });
 
   it('register: unknown fields (organizationId) rejected', () => {
@@ -81,6 +122,9 @@ describe('permissions and features', () => {
     expect(hasPermission('HEAD_OF_SALES', 'apiKey.manage')).toBe(false);
     expect(hasPermission('OWNER', 'audit.read')).toBe(true);
     expect(hasPermission('MANAGER', 'lead.export')).toBe(true);
+    for (const role of ['OWNER', 'HEAD_OF_SALES', 'MANAGER'] as const) {
+      expect(hasPermission(role, 'stats.self.read'), role).toBe(true);
+    }
     expect(invitableRoles('HEAD_OF_SALES')).toEqual(['MANAGER']);
     expect(invitableRoles('MANAGER')).toEqual([]);
   });

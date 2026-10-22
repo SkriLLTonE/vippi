@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
+  INDUSTRY_PRESETS,
   RegisterOrganizationSchema,
   type MeResponse,
   type RegisterOrganizationRequest,
@@ -23,7 +24,14 @@ export function RegisterPage() {
   const navigate = useNavigate();
   const form = useForm<RegisterInput>({
     resolver: zodResolver(RegisterOrganizationSchema),
-    defaultValues: { organizationName: '', fullName: '', email: '', password: '', locale: currentLocale() },
+    defaultValues: {
+      organizationName: '',
+      industryPreset: 'REAL_ESTATE',
+      fullName: '',
+      email: '',
+      password: '',
+      locale: currentLocale(),
+    },
   });
   const register = useMutation({
     mutationFn: (body: RegisterInput) =>
@@ -65,6 +73,17 @@ export function RegisterPage() {
         <FormAlert>{generalError}</FormAlert>
         <Field label={t('auth.organizationName')} error={err('organizationName')}>
           {(c) => <Input {...c} autoComplete="organization" autoFocus {...form.register('organizationName')} />}
+        </Field>
+        <Field label={t('industry.label')} hint={t('industry.registerHint')} error={err('industryPreset')}>
+          {(c) => (
+            <NativeSelect {...c} {...form.register('industryPreset')}>
+              {INDUSTRY_PRESETS.map((p) => (
+                <option key={p} value={p}>
+                  {t(`industry.preset.${p}`)}
+                </option>
+              ))}
+            </NativeSelect>
+          )}
         </Field>
         <Field label={t('auth.fullName')} error={err('fullName')}>
           {(c) => <Input {...c} autoComplete="name" {...form.register('fullName')} />}

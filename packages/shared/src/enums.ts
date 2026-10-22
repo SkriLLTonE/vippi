@@ -104,6 +104,8 @@ export const AUDIT_ACTIONS = [
   'LEADS_EXPORTED',
   'LEAD_DELETED',
   'LEAD_REASSIGNED',
+  'ORG_INDUSTRY_PRESET_CHANGED',
+  'LEAD_FIELDS_UPDATED',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -114,3 +116,7 @@ export const REPLY_TONES = ['FORMAL', 'FRIENDLY'] as const;
 export type ReplyTone = (typeof REPLY_TONES)[number];
 
 export const ORG_TIMEZONE = 'Asia/Tashkent';
+
+/** Industry preset of an organization (ADR-024): only changes visible lead fields and AI prompts. */
+export const INDUSTRY_PRESETS = ['REAL_ESTATE', 'GENERIC'] as const;
+export type IndustryPreset = (typeof INDUSTRY_PRESETS)[number];

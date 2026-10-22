@@ -1,14 +1,13 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { UpdateOrganizationSchema, type OrganizationDto } from '@vippi/shared';
 import { ListChecks, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { toast } from 'sonner';
 import { z } from 'zod';
-import { aiKeys, useAiStatus } from '@/entities/ai-insight';
-import { sessionKeys, useCan } from '@/entities/session';
+import { useAiStatus } from '@/entities/ai-insight';
+import { useCan } from '@/entities/session';
 import { apiRequest } from '@/shared/api';
 import { errorMessage, formatNumber, validationMessage } from '@/shared/lib';
 import {
@@ -27,25 +26,13 @@ import {
   Switch,
 } from '@/shared/ui';
 import { SettingsLayout } from '@/widgets/settings-nav';
+import { organizationKey, useUpdateOrg } from '../model/use-update-org';
+import { IndustryCard } from './industry-card';
+import { LeadFieldsCard } from './lead-fields-card';
+import { StatusLabelsCard } from './status-labels-card';
 
 const NameSchema = z.object({ name: UpdateOrganizationSchema.shape.name.unwrap() });
 type NameForm = z.infer<typeof NameSchema>;
-
-function useUpdateOrg() {
-  const { t } = useTranslation();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (body: { name?: string; aiExternalProcessingEnabled?: boolean }) =>
-      apiRequest<OrganizationDto>('/organization', { method: 'PATCH', body }),
-    onSuccess: (org) => {
-      qc.setQueryData(['organization'], org);
-      void qc.invalidateQueries({ queryKey: sessionKeys.me });
-      void qc.invalidateQueries({ queryKey: aiKeys.status });
-      toast.success(t('common.saved'));
-    },
-    onError: (e) => toast.error(errorMessage(e, t)),
-  });
-}
 
 function CompanyCard({ org, editable }: { org: OrganizationDto; editable: boolean }) {
   const { t } = useTranslation();
@@ -165,7 +152,7 @@ function AiCard({ canManage }: { canManage: boolean }) {
 export function SettingsOrganizationPage() {
   const { t } = useTranslation();
   const can = useCan();
-  const org = useQuery({ queryKey: ['organization'], queryFn: ({ signal }) => apiRequest<OrganizationDto>('/organization', { signal }) });
+  const org = useQuery({ queryKey: organizationKey, queryFn: ({ signal }) => apiRequest<OrganizationDto>('/organization', { signal }) });
   return (
     <SettingsLayout>
       <div className="grid max-w-5xl gap-6 lg:grid-cols-2">
@@ -179,6 +166,9 @@ export function SettingsOrganizationPage() {
           <CompanyCard org={org.data} editable={can('org.manage')} />
         )}
         <AiCard canManage={can('org.manage')} />
+        {org.data ? <IndustryCard org={org.data} editable={can('org.manage')} /> : null}
+        {org.data ? <StatusLabelsCard org={org.data} editable={can('org.manage')} /> : null}
+        <LeadFieldsCard canManage={can('leadFields.manage')} />
       </div>
     </SettingsLayout>
   );

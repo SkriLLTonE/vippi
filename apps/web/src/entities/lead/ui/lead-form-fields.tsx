@@ -1,4 +1,13 @@
-import { CURRENCIES, DISTRICTS, LEAD_SOURCES, PROPERTY_TYPES, type UserRef } from '@vippi/shared';
+import {
+  CURRENCIES,
+  DISTRICTS,
+  LEAD_SOURCES,
+  PROPERTY_TYPES,
+  localizedLabel,
+  type IndustryPreset,
+  type LeadFieldDef,
+  type UserRef,
+} from '@vippi/shared';
 import type { UseFormReturn } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { validationMessage } from '@/shared/lib';
@@ -10,14 +19,24 @@ interface LeadFormFieldsProps {
   /** Shown only for roles that can assign (O, H). */
   assignees?: UserRef[];
   sourceLocked?: boolean;
+  /** Real-estate fields (district, property type, rooms) are rendered only for REAL_ESTATE (ADR-024). */
+  industryPreset?: IndustryPreset;
+  /** Organization custom fields to render. */
+  leadFields?: readonly LeadFieldDef[];
 }
 
 /** FR-010 fields; phone hint `+998 __ ___ __ __`. */
-export function LeadFormFields({ form, assignees, sourceLocked }: LeadFormFieldsProps) {
+export function LeadFormFields({
+  form,
+  assignees,
+  sourceLocked,
+  industryPreset = 'REAL_ESTATE',
+  leadFields = [],
+}: LeadFormFieldsProps) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language === 'uz' ? 'uz' : 'ru';
   const { register, formState } = form;
-  const err = (name: keyof LeadFormInput) => {
+  const err = (name: Exclude<keyof LeadFormInput, 'attributes' | 'attributeCurrencies'>) => {
     const e = formState.errors[name];
     return e ? validationMessage(e.message, e.type, t) : undefined;
   };
@@ -67,33 +86,82 @@ export function LeadFormFields({ form, assignees, sourceLocked }: LeadFormFields
           </div>
         )}
       </Field>
-      <Field label={t('lead.field.district')} error={err('district')}>
-        {(c) => (
-          <NativeSelect {...c} {...register('district')}>
-            <option value="">{t('common.notSpecified')}</option>
-            {DISTRICTS.map((d) => (
-              <option key={d.code} value={d.code}>
-                {d[locale]}
-              </option>
-            ))}
-          </NativeSelect>
-        )}
-      </Field>
-      <Field label={t('lead.field.propertyType')} error={err('propertyType')}>
-        {(c) => (
-          <NativeSelect {...c} {...register('propertyType')}>
-            <option value="">{t('common.notSpecified')}</option>
-            {PROPERTY_TYPES.map((p) => (
-              <option key={p} value={p}>
-                {t(`lead.propertyType.${p}`)}
-              </option>
-            ))}
-          </NativeSelect>
-        )}
-      </Field>
-      <Field label={t('lead.field.rooms')} error={err('rooms')}>
-        {(c) => <Input {...c} inputMode="numeric" {...register('rooms')} />}
-      </Field>
+      {industryPreset === 'REAL_ESTATE' ? (
+        <>
+          <Field label={t('lead.field.district')} error={err('district')}>
+            {(c) => (
+              <NativeSelect {...c} {...register('district')}>
+                <option value="">{t('common.notSpecified')}</option>
+                {DISTRICTS.map((d) => (
+                  <option key={d.code} value={d.code}>
+                    {d[locale]}
+                  </option>
+                ))}
+              </NativeSelect>
+            )}
+          </Field>
+          <Field label={t('lead.field.propertyType')} error={err('propertyType')}>
+            {(c) => (
+              <NativeSelect {...c} {...register('propertyType')}>
+                <option value="">{t('common.notSpecified')}</option>
+                {PROPERTY_TYPES.map((p) => (
+                  <option key={p} value={p}>
+                    {t(`lead.propertyType.${p}`)}
+                  </option>
+                ))}
+              </NativeSelect>
+            )}
+          </Field>
+          <Field label={t('lead.field.rooms')} error={err('rooms')}>
+            {(c) => <Input {...c} inputMode="numeric" {...register('rooms')} />}
+          </Field>
+        </>
+      ) : null}
+      {leadFields.map((def) => {
+        const label = `${localizedLabel(def.label, locale) ?? def.key}${def.required ? ' *' : ''}`;
+        const e = formState.errors.attributes?.[def.key];
+        const error = e ? validationMessage(e.message, e.type, t) : undefined;
+        return (
+          <Field key={def.key} label={label} error={error}>
+            {(c) => {
+              switch (def.type) {
+                case 'single_select':
+                  return (
+                    <NativeSelect {...c} {...register(`attributes.${def.key}`)}>
+                      <option value="">{t('common.notSpecified')}</option>
+                      {(def.options ?? []).map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {localizedLabel(o.label, locale) ?? o.value}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  );
+                case 'money':
+                  return (
+                    <div className="flex gap-2">
+                      <Input {...c} inputMode="numeric" className="flex-1" {...register(`attributes.${def.key}`)} />
+                      <NativeSelect
+                        aria-label={t('lead.field.currency')}
+                        className="w-24"
+                        {...register(`attributeCurrencies.${def.key}`)}
+                      >
+                        {CURRENCIES.map((cur) => (
+                          <option key={cur} value={cur}>
+                            {cur}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </div>
+                  );
+                case 'number':
+                  return <Input {...c} inputMode="decimal" {...register(`attributes.${def.key}`)} />;
+                default:
+                  return <Input {...c} autoComplete="off" maxLength={500} {...register(`attributes.${def.key}`)} />;
+              }
+            }}
+          </Field>
+        );
+      })}
       {assignees ? (
         <Field className="md:col-span-2" label={t('lead.field.assignee')} error={err('assigneeId')}>
           {(c) => (

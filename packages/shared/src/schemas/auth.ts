@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import type { Locale, Role } from '../enums.js';
-import { ROLES } from '../enums.js';
+import { INDUSTRY_PRESETS, ROLES } from '../enums.js';
 import type { FeatureFlags } from '../features.js';
 import type { Permission } from '../permissions.js';
 import { emailSchema, localeSchema, passwordSchema } from './common.js';
+import { StatusLabelsSchema, type OrgLeadConfig } from './org-config.js';
 
 const nameSchema = z
   .string()
@@ -19,6 +20,7 @@ export const RegisterOrganizationSchema = z
     email: emailSchema,
     password: passwordSchema,
     locale: localeSchema.optional(),
+    industryPreset: z.enum(INDUSTRY_PRESETS).optional(),
   })
   .strict()
   .refine((v) => v.password.toLowerCase() !== v.email.toLowerCase(), {
@@ -75,6 +77,8 @@ export const UpdateOrganizationSchema = z
   .object({
     name: nameSchema.optional(),
     aiExternalProcessingEnabled: z.boolean().optional(),
+    industryPreset: z.enum(INDUSTRY_PRESETS).optional(),
+    statusLabels: StatusLabelsSchema.optional(),
   })
   .strict();
 export type UpdateOrganizationRequest = z.infer<typeof UpdateOrganizationSchema>;
@@ -92,7 +96,7 @@ export interface MeResponse {
     isDemo: boolean;
     aiExternalProcessingEnabled: boolean;
     timezone: string;
-  };
+  } & OrgLeadConfig;
   role: Role;
   permissions: Permission[];
   features: FeatureFlags;
@@ -128,7 +132,7 @@ export interface InvitationPreviewDto {
   role: Role;
 }
 
-export interface OrganizationDto {
+export interface OrganizationDto extends OrgLeadConfig {
   id: string;
   name: string;
   timezone: string;

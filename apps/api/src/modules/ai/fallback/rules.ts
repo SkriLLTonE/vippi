@@ -3,6 +3,7 @@ import {
   districtName,
   normalizeApostrophes,
   type District,
+  type IndustryPreset,
   type LeadAnalysis,
   type LeadSource,
   type Locale,
@@ -207,10 +208,63 @@ export interface RuleInput {
   message: string;
   name: string | null;
   hasPhone: boolean;
+  /** GENERIC preset: labels of the organization's custom fields that are still empty on the lead. */
+  missingFields?: readonly string[];
+}
+
+const GENERIC = {
+  ru: {
+    budget: 'Бюджет',
+    found: 'Найдено',
+    budgetFound: 'бюджет',
+    details: 'Расскажите, пожалуйста, подробнее, что именно вас интересует?',
+    time: 'Когда вам удобно поговорить?',
+    field: (label: string) => `Уточните, пожалуйста: ${label}?`,
+  },
+  uz: {
+    budget: 'Byudjet',
+    found: 'Aniqlangan',
+    budgetFound: 'byudjet',
+    details: 'Iltimos, aynan nima qiziqtirayotganini batafsil yozib bering.',
+    time: 'Siz bilan qachon gaplashish qulay?',
+    field: (label: string) => `Iltimos, aniqlashtiring: ${label}?`,
+  },
+} as const;
+
+/** ADR-024: any business — budget only, no district/property/rooms questions or score bonuses. */
+function genericAnalysis(input: RuleInput, locale: Locale): LeadAnalysis {
+  const g = GENERIC[locale];
+  const text = input.message;
+  const budget = extractBudget(text);
+  const fieldsMissing = (input.missingFields ?? []).map((l) => l.slice(0, 120));
+  const head = `${SOURCE_LABEL[locale][input.source]}: ${text.trim().slice(0, 200) || '—'}`;
+  const summary = (
+    budget ? `${head}. ${g.found}: ${g.budgetFound} ${budget.amount.toLocaleString('ru-RU').replace(/\u00a0/g, ' ')} ${budget.currency}` : head
+  ).slice(0, 400);
+  const questions = [
+    ...fieldsMissing.map((l) => g.field(l).slice(0, 150)),
+    ...(text.trim().length < 40 ? [g.details] : []),
+    g.time,
+  ];
+  const scored = scoreLead(input, { budget, district: null, propertyType: null, rooms: null }, locale);
+  return {
+    summary,
+    language: detectLanguage(text),
+    need: null,
+    budget,
+    district: null,
+    propertyType: null,
+    rooms: null,
+    missingInfo: [...fieldsMissing, ...(budget ? [] : [g.budget])].slice(0, 5),
+    score: scored.score,
+    reasons: scored.reasons,
+    nextQuestions: questions.slice(0, 3),
+  };
 }
 
 /** AI-001 + AI-002 fallback (SPEC §17.6). Deterministic. */
-export function ruleBasedAnalysis(input: RuleInput, locale: Locale): LeadAnalysis {
+export function ruleBasedAnalysis(input: RuleInput, locale: Locale, preset: IndustryPreset = 'REAL_ESTATE'): LeadAnalysis {
+  if (preset === 'GENERIC') return genericAnalysis(input, locale);
   const t = T[locale];
   const text = input.message;
   const budget = extractBudget(text);

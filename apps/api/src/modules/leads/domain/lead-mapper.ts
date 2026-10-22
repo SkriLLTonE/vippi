@@ -1,5 +1,5 @@
 import type { Lead, LeadActivity, Prisma } from '@prisma/client';
-import type { District, LeadActivityDto, LeadDto, LeadListItem } from '@vippi/shared';
+import { visibleAttributes, type District, type LeadActivityDto, type LeadDto, type LeadFieldDef, type LeadListItem } from '@vippi/shared';
 
 export const leadInclude = {
   assignee: { select: { id: true, fullName: true } },
@@ -59,7 +59,12 @@ export function toListItem(row: LeadListRow, forgottenAfterHours: number, now: D
   };
 }
 
-export function toLeadDto(lead: LeadWithRelations, forgottenAfterHours: number, now: Date): LeadDto {
+export function toLeadDto(
+  lead: LeadWithRelations,
+  forgottenAfterHours: number,
+  now: Date,
+  fieldDefs: readonly LeadFieldDef[] = [],
+): LeadDto {
   return {
     id: lead.id,
     number: lead.number,
@@ -75,6 +80,7 @@ export function toLeadDto(lead: LeadWithRelations, forgottenAfterHours: number, 
     district: (lead.district as District | null) ?? null,
     propertyType: lead.propertyType,
     rooms: lead.rooms,
+    attributes: visibleAttributes(fieldDefs, lead.attributes),
     status: lead.status,
     lostReason: lead.lostReason,
     lostComment: lead.lostComment,

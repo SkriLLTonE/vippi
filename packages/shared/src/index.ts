@@ -8,6 +8,7 @@ export * from './status-machine.js';
 export * from './time.js';
 export * from './sla-deadline.js';
 export * from './schemas/common.js';
+export * from './schemas/org-config.js';
 export * from './schemas/auth.js';
 export * from './schemas/leads.js';
 export * from './schemas/sla.js';

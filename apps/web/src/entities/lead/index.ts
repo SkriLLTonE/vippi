@@ -3,12 +3,13 @@ export { slaView } from './lib/sla';
 export type { SlaView, SlaViewKind } from './lib/sla';
 export {
   emptyLeadForm,
+  formToAttributes,
   formToCreateRequest,
   formToUpdateRequest,
   leadFormSchema,
   leadToForm,
 } from './model/lead-form';
-export type { LeadFormInput, LeadFormValues } from './model/lead-form';
+export type { LeadFormConfig, LeadFormInput, LeadFormValues } from './model/lead-form';
 export { ActivityItem } from './ui/activity-item';
 export {
   DuplicateBadge,

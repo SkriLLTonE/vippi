@@ -1,5 +1,6 @@
 /**
- * FR-095 demo seed: synthetic organization "Demo Realty Toshkent (DEMO)".
+ * FR-095 demo seed: synthetic organizations "Demo Realty Toshkent (DEMO)" (REAL_ESTATE)
+ * and "Demo Smile Dental (DEMO)" (GENERIC preset with custom fields, ADR-024).
  * All people, phones (+99800… — non-existent operator range) and requests are fictional.
  * Re-running recreates only the demo organization and its demo users; `--if-missing` seeds only when it is absent.
  */
@@ -34,9 +35,9 @@ function mulberry32(seed: number) {
 }
 const rnd = mulberry32(20261021);
 const pick = <T>(arr: readonly T[]): T => arr[Math.floor(rnd() * arr.length)] as T;
-function weighted<T>(items: ReadonlyArray<[T, number]>): T {
+function weighted<T>(items: ReadonlyArray<[T, number]>, random: () => number = rnd): T {
   const total = items.reduce((s, [, w]) => s + w, 0);
-  let r = rnd() * total;
+  let r = random() * total;
   for (const [v, w] of items) {
     r -= w;
     if (r <= 0) return v;
@@ -118,6 +119,191 @@ const DELAY_PROFILES: Array<() => number> = [
   () => 30 + rnd() * 300,
 ];
 
+// ---------------------------------------------------------------- GENERIC demo (ADR-024)
+
+export const CLINIC_ORG_NAME = 'Demo Smile Dental (DEMO)';
+export const CLINIC_EMAIL_DOMAIN = 'demo-clinic.example';
+const CLINIC_LEAD_COUNT = 40;
+const CLINIC_DAYS = 14;
+
+const CLINIC_FIELDS = [
+  {
+    key: 'service',
+    label: { ru: 'Услуга', uz: 'Xizmat' },
+    type: 'single_select',
+    required: true,
+    showInCreate: true,
+    options: [
+      { value: 'consultation', label: { ru: 'Консультация', uz: 'Maslahat' } },
+      { value: 'cleaning', label: { ru: 'Чистка', uz: 'Tozalash' } },
+      { value: 'implant', label: { ru: 'Имплант', uz: 'Implant' } },
+      { value: 'braces', label: { ru: 'Брекеты', uz: 'Breketlar' } },
+      { value: 'whitening', label: { ru: 'Отбеливание', uz: 'Oqartirish' } },
+    ],
+  },
+  {
+    key: 'preferredTime',
+    label: { ru: 'Удобное время', uz: 'Qulay vaqt' },
+    type: 'single_select',
+    required: false,
+    showInCreate: true,
+    options: [
+      { value: 'morning', label: { ru: 'Утро', uz: 'Ertalab' } },
+      { value: 'afternoon', label: { ru: 'День', uz: 'Kunduzi' } },
+      { value: 'evening', label: { ru: 'Вечер', uz: 'Kechqurun' } },
+    ],
+  },
+] as const;
+
+const CLINIC_MESSAGES: ReadonlyArray<{ text: string; service: string; time: string | null }> = [
+  { text: 'Здравствуйте, хочу записаться на чистку зубов, удобно утром', service: 'cleaning', time: 'morning' },
+  { text: 'Сколько стоит имплант под ключ? Бюджет около 6 mln', service: 'implant', time: null },
+  { text: 'Assalomu alaykum, tish oqartirish narxi qancha? Kechqurun kelsam boʻladimi', service: 'whitening', time: 'evening' },
+  { text: 'Ребёнку 12 лет, нужна консультация по брекетам', service: 'braces', time: 'afternoon' },
+  { text: 'Tishim ogʻriyapti, maslahat kerak, bugun kunduzi', service: 'consultation', time: 'afternoon' },
+  { text: 'Хочу поставить брекеты, есть рассрочка?', service: 'braces', time: null },
+  { text: 'Implant qoʻydirmoqchiman, 500$ atrofida', service: 'implant', time: null },
+  { text: 'Запишите на консультацию в субботу', service: 'consultation', time: 'morning' },
+];
+
+/** Synthetic dental clinic on the GENERIC preset with custom fields and renamed final statuses. */
+async function seedClinicDemo(prisma: PrismaClient, hash: string, ifMissing: boolean): Promise<void> {
+  if (ifMissing) {
+    const existing = await prisma.organization.findFirst({ where: { isDemo: true, name: CLINIC_ORG_NAME }, select: { id: true } });
+    if (existing) {
+      console.log(`Demo organization "${CLINIC_ORG_NAME}" already exists — skipped.`);
+      return;
+    }
+  }
+  const r = mulberry32(20261022);
+  const choose = <T>(arr: readonly T[]): T => arr[Math.floor(r() * arr.length)] as T;
+  const now = new Date();
+  const users = [
+    { key: 'owner', email: `owner@${CLINIC_EMAIL_DOMAIN}`, fullName: 'Dilfuza Owner (DEMO)', role: 'OWNER' as const },
+    { key: 'head', email: `admin@${CLINIC_EMAIL_DOMAIN}`, fullName: 'Kamola Admin (DEMO)', role: 'HEAD_OF_SALES' as const },
+    { key: 'm1', email: `reception1@${CLINIC_EMAIL_DOMAIN}`, fullName: 'Sevara Reception (DEMO)', role: 'MANAGER' as const },
+    { key: 'm2', email: `reception2@${CLINIC_EMAIL_DOMAIN}`, fullName: 'Jamshid Reception (DEMO)', role: 'MANAGER' as const },
+  ];
+
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.organization.deleteMany({ where: { isDemo: true, name: CLINIC_ORG_NAME } });
+      await tx.user.deleteMany({ where: { email: { in: users.map((u) => u.email) } } });
+      const org = await tx.organization.create({
+        data: {
+          name: CLINIC_ORG_NAME,
+          isDemo: true,
+          defaultLocale: 'ru',
+          aiExternalProcessingEnabled: false,
+          industryPreset: 'GENERIC',
+          leadFieldDefs: CLINIC_FIELDS as unknown as Prisma.InputJsonValue,
+          statusLabels: { WON: { ru: 'Записан', uz: 'Yozildi' }, LOST: { ru: 'Не записался', uz: 'Yozilmadi' } },
+        },
+      });
+      const ids: Record<string, string> = {};
+      for (const u of users) {
+        const created = await tx.user.create({
+          data: { email: u.email, fullName: u.fullName, passwordHash: hash, locale: u.key === 'm2' ? 'uz' : 'ru' },
+        });
+        ids[u.key] = created.id;
+        await tx.membership.create({ data: { organizationId: org.id, userId: created.id, role: u.role } });
+      }
+      const policy = await tx.slaPolicy.create({ data: { organizationId: org.id, updatedById: ids.owner } });
+      const managers = [ids.m1!, ids.m2!];
+
+      const times: Date[] = [];
+      for (let i = 0; i < CLINIC_LEAD_COUNT - 3; i++) {
+        const t = new Date(now.getTime() - Math.floor(r() * CLINIC_DAYS) * 86_400_000);
+        const base = Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate(), 9 + Math.floor(r() * 10) - 5, Math.floor(r() * 60));
+        if (base < now.getTime() - 40 * 60_000) times.push(new Date(base));
+      }
+      for (const minutesAgo of [5, 30, 120]) times.push(new Date(now.getTime() - minutesAgo * 60_000));
+      times.sort((a, b) => a.getTime() - b.getTime());
+
+      const leads: Prisma.LeadCreateManyInput[] = [];
+      const activities: Prisma.LeadActivityCreateManyInput[] = [];
+      times.forEach((receivedAt, idx) => {
+        const id = randomUUID();
+        const msg = choose(CLINIC_MESSAGES);
+        const fresh = now.getTime() - receivedAt.getTime() < 4 * 3_600_000;
+        const assigneeId = r() < 0.9 ? choose(managers) : null;
+        const dueAt = computeDueAt(receivedAt, policy);
+        const answered = !fresh && r() < 0.9;
+        const firstResponseAt = answered
+          ? new Date(Math.min(receivedAt.getTime() + (2 + r() * 25) * 60_000, now.getTime() - 60_000))
+          : null;
+        const sla = historicalSlaState(dueAt, firstResponseAt, now);
+        const ageDays = (now.getTime() - receivedAt.getTime()) / 86_400_000;
+        let status: LeadStatus = answered ? 'CONTACTED' : 'NEW';
+        let lostReason: LostReason | null = null;
+        let closedAt: Date | null = null;
+        if (answered && ageDays > 1) {
+          status = weighted<LeadStatus>([['CONTACTED', 2], ['QUALIFIED', 1], ['WON', 3], ['LOST', 1.5]], r);
+          if (status === 'LOST') lostReason = weighted<LostReason>([['NO_ANSWER', 2], ['TOO_EXPENSIVE', 2], ['NOT_INTERESTED', 1]], r);
+          if (status === 'WON' || status === 'LOST') closedAt = new Date(receivedAt.getTime() + (0.2 + r() * Math.min(ageDays - 0.5, 3)) * 86_400_000);
+        }
+        const fullName = `${choose(FIRST_NAMES)} ${choose(LAST_INITIALS)}`;
+        const phone = `+99800${String(1_000_000 + Math.floor(r() * 8_999_999))}`;
+        const source = weighted(SOURCES, r);
+        const attributes = r() < 0.7 ? { service: msg.service, ...(msg.time ? { preferredTime: msg.time } : {}) } : {};
+        leads.push({
+          id,
+          organizationId: org.id,
+          number: idx + 1,
+          fullName,
+          phone,
+          source,
+          message: msg.text,
+          attributes,
+          status,
+          lostReason,
+          assigneeId,
+          createdVia: 'SEED',
+          receivedAt,
+          firstResponseDueAt: dueAt,
+          firstResponseAt,
+          firstResponseById: firstResponseAt ? (assigneeId ?? ids.head!) : null,
+          firstResponseChannel: firstResponseAt ? weighted(CHANNELS, r) : null,
+          slaState: sla.slaState,
+          slaBreachedAt: sla.slaState === 'BREACHED' ? dueAt : null,
+          closedAt,
+          searchText: buildLeadSearchText({ fullName, phone, message: msg.text }),
+          createdAt: receivedAt,
+        });
+        const act = (type: Prisma.LeadActivityCreateManyInput['type'], at: Date, actorUserId: string | null, payload?: object) =>
+          activities.push({ organizationId: org.id, leadId: id, type, actorUserId, createdAt: at, payload: payload as Prisma.InputJsonValue });
+        act('CREATED', receivedAt, null, { via: 'SEED' });
+        if (assigneeId) act('ASSIGNED', new Date(receivedAt.getTime() + 30_000), ids.head!, { from: null, to: assigneeId });
+        if (sla.slaState === 'BREACHED') act('SLA_BREACHED', dueAt, null, { dueAt: dueAt.toISOString() });
+        if (firstResponseAt) {
+          act('FIRST_CONTACT', firstResponseAt, assigneeId ?? ids.head!, {
+            channel: leads[leads.length - 1]!.firstResponseChannel,
+            slaState: sla.slaState,
+            viaAiDraft: false,
+          });
+        }
+        if (status !== 'NEW' && status !== 'CONTACTED') {
+          act('STATUS_CHANGED', closedAt ?? new Date((firstResponseAt ?? receivedAt).getTime() + 3_600_000), assigneeId ?? ids.head!, {
+            from: 'CONTACTED',
+            to: status,
+            ...(lostReason ? { lostReason } : {}),
+          });
+        }
+      });
+
+      await tx.lead.createMany({ data: leads });
+      await tx.leadActivity.createMany({ data: activities });
+      await tx.organization.update({ where: { id: org.id }, data: { nextLeadNumber: leads.length + 1 } });
+      await tx.auditLog.create({
+        data: { organizationId: org.id, action: 'ORG_REGISTERED', actorType: 'SYSTEM', metadata: { seed: 'demo-clinic', leads: leads.length } },
+      });
+      console.log(`Demo organization "${CLINIC_ORG_NAME}" (GENERIC) created with ${leads.length} synthetic leads.`);
+      for (const u of users) console.log(`  ${u.role.padEnd(13)} ${u.email}`);
+    },
+    { timeout: 60_000 },
+  );
+}
+
 async function main(): Promise<void> {
   const password = process.env.DEMO_SEED_PASSWORD;
   if (!password || password.length < 10) {
@@ -125,6 +311,11 @@ async function main(): Promise<void> {
   }
   const prisma = new PrismaClient();
   try {
+    await seedClinicDemo(
+      prisma,
+      await argon2.hash(password, { type: argon2.argon2id, memoryCost: 19_456, timeCost: 2, parallelism: 1 }),
+      process.argv.includes('--if-missing'),
+    );
     // `--if-missing` (used on container start, ADR-022): keep an existing demo org so wake-ups don't reset it.
     if (process.argv.includes('--if-missing')) {
       const existing = await prisma.organization.findFirst({ where: { isDemo: true, name: DEMO_ORG_NAME }, select: { id: true } });
@@ -285,6 +476,7 @@ async function main(): Promise<void> {
                 payload: { leadNumber: idx + 1, overdueMinutes: Math.floor((now.getTime() - dueAt.getTime()) / 60_000) },
                 dedupeKey: `SLA_BREACHED:${id}:${userId}`,
                 createdAt: dueAt,
+                dispatchedAt: now,
               });
             }
           }

@@ -77,6 +77,28 @@ describe('AiPanel (FR-070…FR-073, UX-4)', () => {
     });
   });
 
+  it('GENERIC orgs get no district/property/rooms apply buttons, only budget (ADR-024)', async () => {
+    const { calls } = mockApi({
+      'GET /leads/lead-1/ai': () => ({
+        body: {
+          analysis: makeAnalysisEnvelope('RULE_BASED', { budget: { amount: 5000000, currency: 'UZS' } }),
+          draft: null,
+        },
+      }),
+      'POST /leads/lead-1/ai/apply-fields': () => ({ body: lead }),
+    });
+    const me = makeMe('OWNER');
+    me.organization.industryPreset = 'GENERIC';
+    const { user } = renderWithProviders(<AiPanel lead={lead} canAct />, { me });
+    await screen.findByTestId('ai-summary');
+    expect(screen.queryByText('Район')).not.toBeInTheDocument();
+    expect(screen.queryByText('Комнат')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Применить' })).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Применить' }));
+    await waitFor(() => expect(calls.some((c) => c.path.endsWith('/apply-fields'))).toBe(true));
+    expect(calls.find((c) => c.path.endsWith('/apply-fields'))?.body).toEqual({ insightId: 'ins-1', fields: ['budget'] });
+  });
+
   it('hides the deal score when the DEAL_SCORE flag is off (ADR-020)', async () => {
     mockApi({
       'GET /leads/lead-1/ai': () => ({ body: { analysis: makeAnalysisEnvelope('RULE_BASED'), draft: null } }),

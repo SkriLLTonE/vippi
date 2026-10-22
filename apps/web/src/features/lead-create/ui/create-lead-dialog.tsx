@@ -13,11 +13,12 @@ import {
   formToCreateRequest,
   leadFormSchema,
   onLeadChanged,
+  type LeadFormConfig,
   type LeadFormInput,
   type LeadFormValues,
 } from '@/entities/lead';
 import { useAssignees } from '@/entities/member';
-import { useCan } from '@/entities/session';
+import { useCan, useSession } from '@/entities/session';
 import { apiRequest, isApiError } from '@/shared/api';
 import { errorMessage, serverFieldErrors } from '@/shared/lib';
 import { Button, Dialog, FormAlert, type ButtonProps } from '@/shared/ui';
@@ -27,6 +28,11 @@ const FORM_FIELDS = new Set<string>(Object.keys(emptyLeadForm));
 function CreateLeadForm({ onDone }: { onDone: () => void }) {
   const { t } = useTranslation();
   const can = useCan();
+  const { organization } = useSession();
+  const config: LeadFormConfig = {
+    industryPreset: organization.industryPreset,
+    leadFields: organization.leadFields.filter((f) => f.showInCreate || f.required),
+  };
   const canAssign = can('lead.assign');
   const assignees = useAssignees({ enabled: canAssign });
   const qc = useQueryClient();
@@ -37,7 +43,7 @@ function CreateLeadForm({ onDone }: { onDone: () => void }) {
   });
   const create = useMutation({
     mutationFn: (values: LeadFormValues) =>
-      apiRequest<LeadDto>('/leads', { method: 'POST', body: formToCreateRequest(values) }),
+      apiRequest<LeadDto>('/leads', { method: 'POST', body: formToCreateRequest(values, config) }),
     onSuccess: (lead) => {
       onLeadChanged(qc, lead);
       const dup = lead.possibleDuplicateOf;
@@ -53,7 +59,11 @@ function CreateLeadForm({ onDone }: { onDone: () => void }) {
     },
     onError: (e) => {
       for (const d of serverFieldErrors(e)) {
-        const field = d.path.split('.')[0] ?? '';
+        const [field = '', attrKey] = d.path.split('.');
+        if (field === 'attributes' && attrKey) {
+          form.setError(`attributes.${attrKey}`, { message: d.code });
+          continue;
+        }
         const name = field === 'budget' ? 'budgetAmount' : field;
         if (FORM_FIELDS.has(name)) form.setError(name as keyof LeadFormInput, { message: d.code });
       }
@@ -73,7 +83,12 @@ function CreateLeadForm({ onDone }: { onDone: () => void }) {
       className="flex flex-col gap-4"
     >
       <FormAlert>{generalError}</FormAlert>
-      <LeadFormFields form={form} assignees={canAssign ? assignees : undefined} />
+      <LeadFormFields
+        form={form}
+        assignees={canAssign ? assignees : undefined}
+        industryPreset={config.industryPreset}
+        leadFields={config.leadFields}
+      />
       <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 md:flex-row md:justify-end">
         <Button variant="outline" onClick={onDone} disabled={create.isPending}>
           {t('common.cancel')}

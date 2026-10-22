@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import {
@@ -6,8 +6,12 @@ import {
   ChangeRoleSchema,
   CreateApiKeySchema,
   CreateInvitationSchema,
+  LeadFieldDefSchema,
+  UpdateLeadFieldSchema,
   UpdateOrganizationSchema,
   type AcceptInvitationRequest,
+  type LeadFieldDef,
+  type UpdateLeadFieldRequest,
   type ChangeRoleRequest,
   type CreateApiKeyRequest,
   type CreateInvitationRequest,
@@ -22,10 +26,12 @@ import { ApiZodBody, ZodPipe } from '../../common/zod.js';
 import { SessionsService } from '../identity-access/sessions.service.js';
 import { ApiKeysService } from './api-keys.service.js';
 import { InvitationsService } from './invitations.service.js';
+import { LeadFieldsService } from './lead-fields.service.js';
 import { MembersService } from './members.service.js';
 import { OrganizationsService } from './organizations.service.js';
 
 const PreviewQuerySchema = z.object({ token: z.string().min(20).max(100) }).strict();
+const LeadFieldKeyParam = new ZodPipe(LeadFieldDefSchema.shape.key);
 
 @ApiTags('organization')
 @Controller()
@@ -36,6 +42,7 @@ export class OrganizationsController {
     private readonly invitations: InvitationsService,
     private readonly apiKeys: ApiKeysService,
     private readonly sessions: SessionsService,
+    private readonly leadFields: LeadFieldsService,
   ) {}
 
   @Get('organization')
@@ -53,6 +60,46 @@ export class OrganizationsController {
     @RequestMeta() meta: ReqMeta,
   ) {
     return this.orgs.update(actor, body, meta);
+  }
+
+  @Get('lead-fields')
+  @RequirePermission('org.read')
+  listLeadFields(@CurrentActor() actor: Actor) {
+    return this.leadFields.list(actor.orgId);
+  }
+
+  @Post('lead-fields')
+  @RequirePermission('leadFields.manage')
+  @ApiZodBody(LeadFieldDefSchema)
+  createLeadField(
+    @CurrentActor() actor: Actor,
+    @Body(new ZodPipe(LeadFieldDefSchema)) body: LeadFieldDef,
+    @RequestMeta() meta: ReqMeta,
+  ) {
+    return this.leadFields.create(actor, body, meta);
+  }
+
+  @Patch('lead-fields/:key')
+  @RequirePermission('leadFields.manage')
+  @ApiZodBody(UpdateLeadFieldSchema)
+  updateLeadField(
+    @CurrentActor() actor: Actor,
+    @Param('key', LeadFieldKeyParam) key: string,
+    @Body(new ZodPipe(UpdateLeadFieldSchema)) body: UpdateLeadFieldRequest,
+    @RequestMeta() meta: ReqMeta,
+  ) {
+    return this.leadFields.update(actor, key, body, meta);
+  }
+
+  @Delete('lead-fields/:key')
+  @RequirePermission('leadFields.manage')
+  @HttpCode(204)
+  async deleteLeadField(
+    @CurrentActor() actor: Actor,
+    @Param('key', LeadFieldKeyParam) key: string,
+    @RequestMeta() meta: ReqMeta,
+  ): Promise<void> {
+    await this.leadFields.remove(actor, key, meta);
   }
 
   @Get('members')

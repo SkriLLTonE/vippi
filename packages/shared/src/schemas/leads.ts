@@ -23,6 +23,7 @@ import type { District } from '../districts.js';
 import { DISTRICT_CODES } from '../districts.js';
 import { normalizePhone } from '../text-normalize.js';
 import { booleanQuery, csvEnum, dateOnlySchema, pageQuerySchema } from './common.js';
+import { leadAttributesInputSchema, type LeadAttributes } from './org-config.js';
 
 export const phoneSchema = z
   .string()
@@ -54,6 +55,8 @@ const leadFields = {
   district: z.enum(DISTRICT_CODES).optional(),
   propertyType: z.enum(PROPERTY_TYPES).optional(),
   rooms: z.number().int().min(1).max(10).optional(),
+  /** Custom fields of the organization (ADR-024), validated server-side against its definitions. */
+  attributes: leadAttributesInputSchema.optional(),
 };
 
 const nameOrPhone = (v: { fullName?: string | undefined; phone?: string | undefined }) =>
@@ -83,6 +86,8 @@ export const UpdateLeadSchema = z
     district: z.enum(DISTRICT_CODES).nullable().optional(),
     propertyType: z.enum(PROPERTY_TYPES).nullable().optional(),
     rooms: z.number().int().min(1).max(10).nullable().optional(),
+    /** Partial: only listed keys change, `null` clears a value. */
+    attributes: leadAttributesInputSchema.optional(),
   })
   .strict();
 export type UpdateLeadRequest = z.infer<typeof UpdateLeadSchema>;
@@ -197,6 +202,8 @@ export interface LeadDto {
   district: District | null;
   propertyType: PropertyType | null;
   rooms: number | null;
+  /** Values of the organization's active custom fields. */
+  attributes: LeadAttributes;
   status: LeadStatus;
   lostReason: LostReason | null;
   lostComment: string | null;

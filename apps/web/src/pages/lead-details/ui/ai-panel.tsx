@@ -86,13 +86,16 @@ function differs(field: AiApplicableField, a: LeadAnalysis, lead: LeadDto): bool
   }
 }
 
-const FIELDS: AiApplicableField[] = ['budget', 'district', 'propertyType', 'rooms'];
+const REAL_ESTATE_FIELDS: AiApplicableField[] = ['budget', 'district', 'propertyType', 'rooms'];
+/** GENERIC orgs: the API applies only budget (ADR-024). */
+const GENERIC_FIELDS: AiApplicableField[] = ['budget'];
 
 function AnalysisBlock({ lead, state, canAct }: { lead: LeadDto; state: LeadAiState | undefined; canAct: boolean }) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language === 'uz' ? 'uz' : 'ru';
   const qc = useQueryClient();
   const showScore = useFeature('DEAL_SCORE');
+  const fields = useSession().organization.industryPreset === 'GENERIC' ? GENERIC_FIELDS : REAL_ESTATE_FIELDS;
   const analyze = useMutation({
     mutationFn: (force: boolean) =>
       apiRequest<AiResultEnvelope<LeadAnalysis>>(`/leads/${lead.id}/ai/analysis`, { method: 'POST', body: { force } }),
@@ -126,7 +129,7 @@ function AnalysisBlock({ lead, state, canAct }: { lead: LeadDto; state: LeadAiSt
     );
   }
   const a = env.result;
-  const applicable = FIELDS.filter((f) => differs(f, a, lead));
+  const applicable = fields.filter((f) => differs(f, a, lead));
   const band = scoreBand(a.score);
   return (
     <div className="flex flex-col gap-4" data-testid="ai-analysis">
@@ -146,7 +149,7 @@ function AnalysisBlock({ lead, state, canAct }: { lead: LeadDto; state: LeadAiSt
           {a.need ? ` · ${a.need}` : ''}
         </p>
       </div>
-      {FIELDS.some((f) => fieldValue(f, a, locale, t)) ? (
+      {fields.some((f) => fieldValue(f, a, locale, t)) ? (
         <div>
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="text-sm font-semibold">{t('ai.extracted')}</h3>
@@ -157,7 +160,7 @@ function AnalysisBlock({ lead, state, canAct }: { lead: LeadDto; state: LeadAiSt
             ) : null}
           </div>
           <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-            {FIELDS.map((f) => {
+            {fields.map((f) => {
               const value = fieldValue(f, a, locale, t);
               if (!value) return null;
               const canApply = canAct && applicable.includes(f);

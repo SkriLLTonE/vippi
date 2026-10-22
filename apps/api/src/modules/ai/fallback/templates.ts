@@ -1,4 +1,4 @@
-import { districtName, type LeadAnalysis, type Locale, type ReplyDraft, type ReplyTone, type WeeklySummary } from '@vippi/shared';
+import { districtName, type IndustryPreset, type LeadAnalysis, type Locale, type ReplyDraft, type ReplyTone, type WeeklySummary } from '@vippi/shared';
 import { uzCyrillicToLatin } from './translit.js';
 
 const PROPERTY: Record<Locale, Record<string, string>> = {
@@ -26,6 +26,28 @@ export interface ReplyTemplateInput {
   companyName: string;
   managerName: string;
   analysis: Pick<LeadAnalysis, 'budget' | 'district' | 'propertyType' | 'rooms'> | null;
+  /** ADR-024: GENERIC never mentions property, district or rooms. */
+  preset?: IndustryPreset;
+  /** GENERIC: labels of custom fields still empty on the lead. */
+  missingFields?: readonly string[];
+}
+
+const GENERIC_QUESTIONS: Record<Locale, { details: string; time: string; field: (label: string) => string }> = {
+  ru: {
+    details: 'расскажите подробнее о вашем запросе?',
+    time: 'когда вам удобно связаться?',
+    field: (label) => `${label.toLowerCase()}?`,
+  },
+  uz: {
+    details: "so'rovingiz haqida batafsilroq yozib bera olasizmi?",
+    time: "siz bilan qachon bog'lanish qulay?",
+    field: (label) => `${uzCyrillicToLatin(label).toLowerCase()}?`,
+  },
+};
+
+function genericQuestions(input: ReplyTemplateInput, lang: Locale): string[] {
+  const q = GENERIC_QUESTIONS[lang];
+  return [...(input.missingFields ?? []).map(q.field), q.details, q.time].slice(0, 2);
 }
 
 function propertyPhrase(a: ReplyTemplateInput['analysis'], lang: Locale): string {
@@ -51,8 +73,9 @@ function questions(a: ReplyTemplateInput['analysis'], lang: Locale): string[] {
 
 /** AI-003 fallback (SPEC §17.6): ru/uz × FORMAL/FRIENDLY. */
 export function templateReply(input: ReplyTemplateInput, language: Locale, tone: ReplyTone): ReplyDraft {
-  const qs = questions(input.analysis, language);
-  const phrase = propertyPhrase(input.analysis, language);
+  const generic = input.preset === 'GENERIC';
+  const qs = generic ? genericQuestions(input, language) : questions(input.analysis, language);
+  const phrase = generic ? '' : propertyPhrase(input.analysis, language);
   let text: string;
   if (language === 'ru') {
     const hello = tone === 'FORMAL' ? `Здравствуйте${input.name ? `, ${input.name}` : ''}!` : `Добрый день${input.name ? `, ${input.name}` : ''}!`;
@@ -60,7 +83,8 @@ export function templateReply(input: ReplyTemplateInput, language: Locale, tone:
       tone === 'FORMAL'
         ? `Меня зовут ${input.managerName}, я представляю компанию ${input.companyName}. Благодарим за обращение.`
         : `Это ${input.managerName} из ${input.companyName}. Спасибо, что написали нам!`;
-    const ask = qs.length ? ` Чтобы подобрать варианты, подскажите, пожалуйста: ${qs.join(' И ')}` : ' Когда вам удобно обсудить варианты?';
+    const lead = generic ? 'Чтобы помочь вам' : 'Чтобы подобрать варианты';
+    const ask = qs.length ? ` ${lead}, подскажите, пожалуйста: ${qs.join(' И ')}` : ' Когда вам удобно обсудить варианты?';
     text = `${hello} ${intro}${phrase ? ` ${phrase}` : ''}${ask}`;
   } else {
     const name = input.name ? uzCyrillicToLatin(input.name) : null;

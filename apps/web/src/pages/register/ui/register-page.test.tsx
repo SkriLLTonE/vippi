@@ -55,6 +55,23 @@ describe('RegisterPage (FR-001)', () => {
       organizationName: 'Test Agency',
       email: 'owner@example.test',
       locale: 'ru',
+      industryPreset: 'REAL_ESTATE',
     });
+  });
+
+  it('registers a non-real-estate business (ADR-024)', async () => {
+    const { calls } = mockApi({
+      'POST /auth/register-organization': () => ({ status: 201, body: makeMe('OWNER') }),
+    });
+    const { user } = renderWithProviders(<RegisterPage />, {
+      path: '/register',
+      me: null,
+      extraRoutes: [{ path: '/leads', element: <p>leads page</p> }],
+    });
+    await fill(user);
+    await user.selectOptions(screen.getByLabelText('Тип бизнеса'), 'Другой бизнес');
+    await user.click(screen.getByRole('button', { name: 'Создать компанию' }));
+    expect(await screen.findByText('leads page')).toBeInTheDocument();
+    expect(calls[0]?.body).toMatchObject({ industryPreset: 'GENERIC' });
   });
 });
