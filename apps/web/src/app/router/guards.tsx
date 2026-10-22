@@ -2,7 +2,7 @@ import type { FeatureFlag, Permission } from '@vippi/shared';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Navigate, useLocation } from 'react-router';
-import { homePath, useCan, useFeature, useMeQuery, useSession } from '@/entities/session';
+import { homePath, useCan, useFeature, useMeQuery } from '@/entities/session';
 import { applyLocale } from '@/shared/i18n';
 import { errorMessage } from '@/shared/lib';
 import { ErrorState, ForbiddenState, NotFoundState, Skeleton } from '@/shared/ui';
@@ -63,10 +63,6 @@ export function RequirePermission({ permission, children }: { permission: Permis
 /** A disabled feature flag behaves as a missing route (ADR-020). */
 export function RequireFeature({ flag, children }: { flag: FeatureFlag; children: ReactNode }) {
   return useFeature(flag) ? children : <NotFoundState />;
-}
-
-export function HomeRedirect() {
-  return <Navigate to={homePath(useSession())} replace />;
 }
 
 export function SettingsRedirect() {

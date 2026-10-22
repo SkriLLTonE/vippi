@@ -1,9 +1,13 @@
 import { createBrowserRouter } from 'react-router';
 import { AppShell } from '@/widgets/app-shell';
 import { NotFoundState } from '@/shared/ui';
-import { GuestOnly, HomeRedirect, RequireAuth, RequireFeature, RequirePermission, SettingsRedirect } from './guards';
+import { GuestOnly, RequireAuth, RequireFeature, RequirePermission, SettingsRedirect } from './guards';
 
 export const router = createBrowserRouter([
+  {
+    path: '/',
+    lazy: async () => ({ Component: (await import('@/pages/landing')).LandingPage }),
+  },
   {
     path: '/login',
     lazy: async () => {
@@ -41,7 +45,6 @@ export const router = createBrowserRouter([
       </RequireAuth>
     ),
     children: [
-      { index: true, element: <HomeRedirect /> },
       {
         path: 'dashboard',
         lazy: async () => {
@@ -50,6 +53,19 @@ export const router = createBrowserRouter([
             Component: () => (
               <RequirePermission permission="dashboard.read">
                 <DashboardPage />
+              </RequirePermission>
+            ),
+          };
+        },
+      },
+      {
+        path: 'my-stats',
+        lazy: async () => {
+          const { MyStatsPage } = await import('@/pages/my-stats');
+          return {
+            Component: () => (
+              <RequirePermission permission="stats.self.read">
+                <MyStatsPage />
               </RequirePermission>
             ),
           };

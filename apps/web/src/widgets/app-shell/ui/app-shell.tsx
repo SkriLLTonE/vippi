@@ -1,4 +1,3 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Permission } from '@vippi/shared';
 import {
   AlarmClockOff,
@@ -11,6 +10,7 @@ import {
   PanelLeftOpen,
   Search,
   Settings,
+  TrendingUp,
   UserRound,
   Users,
   type LucideIcon,
@@ -18,13 +18,12 @@ import {
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet, useNavigate } from 'react-router';
-import { toast } from 'sonner';
 import { useOverdueLeads } from '@/entities/lead';
-import { setSession, useSession } from '@/entities/session';
+import { useSession } from '@/entities/session';
 import { CreateLeadButton } from '@/features/lead-create';
 import { LocaleSwitch } from '@/features/locale-switch';
-import { apiRequest } from '@/shared/api';
-import { cn, errorMessage, useMediaQuery } from '@/shared/lib';
+import { useLogout } from '@/features/logout';
+import { cn, useMediaQuery } from '@/shared/lib';
 import { Button, Dialog, Input, Tooltip } from '@/shared/ui';
 import { useShellUi } from '../model/ui-store';
 import { NotificationsPopover, NotificationsSheetButton } from './notifications';
@@ -34,6 +33,8 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   permission?: Permission;
+  /** Hidden for users who also hold this permission (they have a fuller screen). */
+  hiddenWith?: Permission;
   badge?: number;
 }
 
@@ -42,27 +43,28 @@ function useNavItems(overdue: number): NavItem[] {
   const me = useSession();
   const items: NavItem[] = [
     { to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard, permission: 'dashboard.read' },
+    {
+      to: '/my-stats',
+      label: t('nav.myStats'),
+      icon: TrendingUp,
+      permission: 'stats.self.read',
+      hiddenWith: 'dashboard.read',
+    },
     { to: '/leads', label: t('nav.leads'), icon: ListTodo },
     { to: '/overdue', label: t('nav.overdue'), icon: AlarmClockOff, badge: overdue },
     { to: '/team', label: t('nav.team'), icon: Users, permission: 'invitation.manage' },
     { to: '/settings', label: t('nav.settings'), icon: Settings, permission: 'sla.manage' },
   ];
-  return items.filter((i) => !i.permission || me.permissions.includes(i.permission));
+  return items.filter(
+    (i) =>
+      (!i.permission || me.permissions.includes(i.permission)) &&
+      !(i.hiddenWith && me.permissions.includes(i.hiddenWith)),
+  );
 }
 
-function useLogout() {
-  const { t } = useTranslation();
-  const qc = useQueryClient();
+function useShellLogout() {
   const navigate = useNavigate();
-  return useMutation({
-    mutationFn: () => apiRequest<void>('/auth/logout', { method: 'POST' }),
-    onSuccess: () => {
-      setSession(qc, null);
-      qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'session' });
-      void navigate('/login', { replace: true });
-    },
-    onError: (e) => toast.error(errorMessage(e, t)),
-  });
+  return useLogout({ onLoggedOut: () => void navigate('/login', { replace: true }) });
 }
 
 function CountBadge({ value }: { value: number }) {
@@ -113,7 +115,7 @@ function Sidebar({ items }: { items: NavItem[] }) {
   const { sidebarCollapsed, toggleSidebar } = useShellUi();
   const isLarge = useMediaQuery('(min-width: 1024px)');
   const collapsed = sidebarCollapsed || !isLarge;
-  const logout = useLogout();
+  const logout = useShellLogout();
   return (
     <aside
       className={cn(
@@ -222,7 +224,7 @@ function DemoBanner() {
 function MobileNav({ items }: { items: NavItem[] }) {
   const { t } = useTranslation();
   const [moreOpen, setMoreOpen] = useState(false);
-  const logout = useLogout();
+  const logout = useShellLogout();
   const primary = items.filter((i) => i.to === '/leads' || i.to === '/overdue');
   const rest: NavItem[] = [
     ...items.filter((i) => i.to !== '/leads' && i.to !== '/overdue'),

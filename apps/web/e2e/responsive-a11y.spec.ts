@@ -83,6 +83,7 @@ test.beforeAll(async ({ browser, baseURL }) => {
 });
 
 const PAGES = [
+  { name: 'landing', path: () => '/', auth: false },
   { name: 'login', path: () => '/login', auth: false },
   { name: 'register', path: () => '/register', auth: false },
   { name: 'leads', path: () => '/leads', auth: true },
