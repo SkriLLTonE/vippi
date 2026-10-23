@@ -82,11 +82,13 @@ export class OrganizationsService {
             ? { aiExternalProcessingEnabled: input.aiExternalProcessingEnabled }
             : {}),
           ...(input.statusLabels !== undefined ? { statusLabels: input.statusLabels as Prisma.InputJsonValue } : {}),
+          ...(input.timezone !== undefined ? { timezone: input.timezone } : {}),
         },
       });
       const settingsFields: string[] = [];
       if (input.name !== undefined && input.name !== before.name) settingsFields.push('name');
       if (input.emailFrom !== undefined && input.emailFrom !== before.emailFrom) settingsFields.push('emailFrom');
+      if (input.timezone !== undefined && input.timezone !== before.timezone) settingsFields.push('timezone');
       if (
         input.statusLabels !== undefined &&
         JSON.stringify(input.statusLabels) !== JSON.stringify(parseStatusLabels(before.statusLabels))

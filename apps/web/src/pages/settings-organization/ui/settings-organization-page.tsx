@@ -1,17 +1,13 @@
-import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery } from '@tanstack/react-query';
-import { UpdateOrganizationSchema, type OrganizationDto } from '@vippi/shared';
+import type { OrganizationDto } from '@vippi/shared';
 import { ListChecks, Sparkles } from 'lucide-react';
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { z } from 'zod';
 import { useAiStatus } from '@/entities/ai-insight';
 import { useCan } from '@/entities/session';
 import { apiRequest } from '@/shared/api';
-import { errorMessage, formatNumber, validationMessage } from '@/shared/lib';
+import { errorMessage, formatNumber } from '@/shared/lib';
 import {
-  Button,
   Card,
   CardContent,
   CardDescription,
@@ -20,52 +16,15 @@ import {
   ConfirmDialog,
   DelayedSkeleton,
   ErrorState,
-  Field,
-  Input,
   Skeleton,
   Switch,
 } from '@/shared/ui';
 import { SettingsLayout } from '@/widgets/settings-nav';
 import { organizationKey, useUpdateOrg } from '../model/use-update-org';
+import { CompanyCard } from './company-card';
 import { IndustryCard } from './industry-card';
 import { LeadFieldsCard } from './lead-fields-card';
 import { StatusLabelsCard } from './status-labels-card';
-
-const NameSchema = z.object({ name: UpdateOrganizationSchema.shape.name.unwrap() });
-type NameForm = z.infer<typeof NameSchema>;
-
-function CompanyCard({ org, editable }: { org: OrganizationDto; editable: boolean }) {
-  const { t } = useTranslation();
-  const update = useUpdateOrg();
-  const form = useForm<NameForm>({ resolver: zodResolver(NameSchema), defaultValues: { name: org.name } });
-  const nameError = form.formState.errors.name;
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t('org.company')}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form
-          noValidate
-          className="flex flex-col gap-4"
-          onSubmit={form.handleSubmit((v) => update.mutate({ name: v.name }, { onSuccess: (o) => form.reset({ name: o.name }) }))}
-        >
-          <Field label={t('org.name')} error={nameError ? validationMessage(nameError.message, nameError.type, t) : undefined}>
-            {(c) => <Input {...c} readOnly={!editable} {...form.register('name')} />}
-          </Field>
-          <Field label={t('org.timezone')} hint={t('org.timezoneHint')}>
-            {(c) => <Input {...c} readOnly value="Asia/Tashkent (UTC+5)" />}
-          </Field>
-          {editable ? (
-            <Button type="submit" className="self-start" disabled={!form.formState.isDirty} loading={update.isPending} loadingText={t('common.saving')}>
-              {t('common.save')}
-            </Button>
-          ) : null}
-        </form>
-      </CardContent>
-    </Card>
-  );
-}
 
 function AiCard({ canManage }: { canManage: boolean }) {
   const { t } = useTranslation();

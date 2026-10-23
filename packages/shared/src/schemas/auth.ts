@@ -5,6 +5,7 @@ import type { FeatureFlags } from '../features.js';
 import type { Permission } from '../permissions.js';
 import { emailSchema, localeSchema, passwordSchema } from './common.js';
 import { IndustrySchema } from '../industries.js';
+import { TIMEZONES } from '../timezones.js';
 import { StatusLabelsSchema, type OrgLeadConfig, type OverridableStatus } from './org-config.js';
 
 const nameSchema = z
@@ -88,6 +89,8 @@ export const UpdateOrganizationSchema = z
     /** Legacy (ADR-024); ignored when `industry` is present. */
     industryPreset: z.enum(INDUSTRY_PRESETS).optional(),
     statusLabels: StatusLabelsSchema.optional(),
+    /** Stored values outside the list stay readable (`OrganizationDto.timezone` is a plain string). */
+    timezone: z.enum(TIMEZONES).optional(),
   })
   .strict();
 export type UpdateOrganizationRequest = z.infer<typeof UpdateOrganizationSchema>;

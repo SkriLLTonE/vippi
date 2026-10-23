@@ -836,7 +836,19 @@
     "name": "Название компании",
     "requestsToday": "AI-запросов сегодня",
     "timezone": "Часовой пояс",
-    "timezoneHint": "Все дедлайны и отчёты считаются по ташкентскому времени",
+    "timezoneHint": "Пока сроки SLA, отчёты и время в интерфейсе считаются по Ташкенту (UTC+5) — выбранный пояс на них ещё не влияет",
+    "tz": {
+      "Asia/Tashkent": "Ташкент",
+      "Asia/Samarkand": "Самарканд",
+      "Asia/Almaty": "Алматы",
+      "Asia/Bishkek": "Бишкек",
+      "Asia/Dushanbe": "Душанбе",
+      "Asia/Ashgabat": "Ашхабад",
+      "Europe/Moscow": "Москва",
+      "Asia/Yekaterinburg": "Екатеринбург",
+      "Asia/Dubai": "Дубай",
+      "Europe/Istanbul": "Стамбул"
+    },
     "tokensToday": "Токенов сегодня",
     "viewOnly": "Изменять эти настройки может только владелец компании"
   },

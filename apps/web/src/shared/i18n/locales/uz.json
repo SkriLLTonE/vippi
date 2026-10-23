@@ -818,7 +818,19 @@
     "name": "Kompaniya nomi",
     "requestsToday": "Bugungi AI soʻrovlari",
     "timezone": "Vaqt zonasi",
-    "timezoneHint": "Barcha muddatlar va hisobotlar Toshkent vaqti boʻyicha hisoblanadi",
+    "timezoneHint": "Hozircha SLA muddatlari, hisobotlar va interfeysdagi vaqt Toshkent (UTC+5) boʻyicha hisoblanadi — tanlangan zona ularga hali taʼsir qilmaydi",
+    "tz": {
+      "Asia/Tashkent": "Toshkent",
+      "Asia/Samarkand": "Samarqand",
+      "Asia/Almaty": "Olmaota",
+      "Asia/Bishkek": "Bishkek",
+      "Asia/Dushanbe": "Dushanbe",
+      "Asia/Ashgabat": "Ashxobod",
+      "Europe/Moscow": "Moskva",
+      "Asia/Yekaterinburg": "Yekaterinburg",
+      "Asia/Dubai": "Dubay",
+      "Europe/Istanbul": "Istanbul"
+    },
     "tokensToday": "Bugungi tokenlar",
     "viewOnly": "Bu sozlamalarni faqat kompaniya egasi oʻzgartira oladi"
   },
